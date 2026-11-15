@@ -5,7 +5,9 @@ export declare class DeclarationError extends Error {
     constructor(problems: string[]);
 }
 /** The declaration after checking: lists with their defaults filled in. */
-export interface Content {
+export interface Content<D extends ContentDeclaration = ContentDeclaration> {
+    /** Type-level only: the declaration, so keys and list names can be checked. Never set. */
+    readonly declared?: D;
     texts: ReadonlyMap<string, TextDeclaration>;
     lists: ReadonlyMap<string, ListDeclaration & {
         maxItems: number;
@@ -22,4 +24,4 @@ export interface Content {
  * key not shaped `<page>.<name>`; a list without a required text title field;
  * a limit over the hard maximum; or a default text that fails its own checks.
  */
-export declare function defineContent(declaration: ContentDeclaration): Content;
+export declare function defineContent<const D extends ContentDeclaration>(declaration: D): Content<D>;

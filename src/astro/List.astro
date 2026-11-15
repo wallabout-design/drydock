@@ -1,0 +1,13 @@
+---
+// A list: the container carries data-list. Put each item in an element with
+// {...itemAttrs(item)}; the slot gets the items from reader.list(name).
+import { listAttrs, type ListName } from '@wallabout-design/editor';
+
+interface Props {
+  name: ListName;
+  as?: string;
+  class?: string;
+}
+const { name, as: Tag = 'ul', class: className } = Astro.props;
+---
+<Tag class={className} {...listAttrs(name)}><slot /></Tag>

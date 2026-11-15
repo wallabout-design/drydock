@@ -109,9 +109,9 @@ export interface Rule {
 }
 
 export interface ContentDeclaration {
-  texts?: TextDeclaration[];
-  lists?: ListDeclaration[];
-  rules?: Rule[];
+  texts?: readonly TextDeclaration[];
+  lists?: readonly ListDeclaration[];
+  rules?: readonly Rule[];
 }
 
 export type ProblemKind =
