@@ -2,7 +2,7 @@
   "name": "@wallabout-design/editor",
   "version": "0.1.0",
   "description": "Client-side editing for wallabout sites: staff edit texts and lists on their own site",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "repository": "github:wallabout-design/editor",
   "type": "module",
   "sideEffects": false,
