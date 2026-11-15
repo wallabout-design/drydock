@@ -3,7 +3,7 @@ export const MAX_OPERATIONS = 50;
 const STALE = { kind: 'stale' };
 const bad = (message) => ({ kind: 'invalid', message });
 /** Deep equality for stored values, which are plain JSON-like data. */
-function sameValue(a, b) {
+export function sameValue(a, b) {
     if (a === b)
         return true;
     if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null)

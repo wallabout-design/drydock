@@ -55,6 +55,8 @@ export type Applied = {
     reason: 'invalid';
     message: string;
 };
+/** Deep equality for stored values, which are plain JSON-like data. */
+export declare function sameValue(a: unknown, b: unknown): boolean;
 /**
  * Checks the operations against `state` as the editor saw it, and applies them in
  * order. Nothing is changed: the result carries the new state, or a refusal.
