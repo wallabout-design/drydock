@@ -21,6 +21,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm run verify
       # Sites install dist/ straight from git, so it must match src/.
       - name: dist/ is up to date
