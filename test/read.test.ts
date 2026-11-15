@@ -115,7 +115,7 @@ describe('D1 loader', () => {
           },
           async all() {
             if (rows.fail) throw new Error('SELECT secret FROM x failed');
-            return { results: (q.includes('FROM texts') ? rows.texts : rows.items?.[arg as string]) ?? [] } as { results: never[] };
+            return { results: (q.includes('FROM content_texts') ? rows.texts : rows.items?.[arg as string]) ?? [] } as { results: never[] };
           },
         };
         return st;
