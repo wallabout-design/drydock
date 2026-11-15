@@ -1,0 +1,253 @@
+/* The in-page text editor's styles (editor.js). Loaded only on
+   /admin/edit, for signed-in staff. Its own colours and system font, so it
+   reads as a tool on top of any site, in light and dark. */
+
+:root[data-editor] {
+  --wd-editor-ink: #14161a;
+  --wd-editor-paper: #ffffff;
+  --wd-editor-line: #5b6470;
+  --wd-editor-mark: #0b57d0;
+  --wd-editor-changed: #8a5300;
+  --wd-editor-problem: #b3261e;
+  --wd-editor-saved: #146c2e;
+}
+/* Room for the bar, so it never covers the foot of the page. */
+:root[data-editor] body {
+  padding-bottom: 50vh;
+}
+
+/* Low specificity (:where), so a site's own positioning always wins. Lifting
+   marked text above its neighbours keeps it clickable where a link's hit
+   area is stretched over a whole card. */
+:where([data-copy]:not(meta)) {
+  position: relative;
+  z-index: 1;
+}
+[data-copy]:not(meta) {
+  outline: 1px dashed var(--wd-editor-line);
+  outline-offset: 3px;
+  cursor: text;
+}
+[data-copy]:not(meta):hover,
+[data-copy]:not(meta):focus-visible {
+  outline: 2px solid var(--wd-editor-mark);
+}
+[data-copy][contenteditable] {
+  outline: 3px solid var(--wd-editor-mark);
+  -webkit-user-modify: read-write-plaintext-only;
+}
+[data-copy][data-editor-state='changed'] {
+  outline: 2px solid var(--wd-editor-changed);
+}
+[data-copy][data-editor-state='problem'] {
+  outline: 3px solid var(--wd-editor-problem);
+}
+[data-copy][data-editor-state='editing'] {
+  outline: 3px solid var(--wd-editor-mark);
+}
+[data-copy][data-editor-state='saved'] {
+  outline: 2px solid var(--wd-editor-saved);
+}
+/* Saved but not live yet; stuck means a person has to look at it. */
+[data-copy][data-editor-state='waiting'] {
+  outline: 2px dashed var(--wd-editor-saved);
+}
+[data-copy][data-editor-state='stuck'] {
+  outline: 2px dashed var(--wd-editor-problem);
+}
+
+.wd-editor {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 2147483000;
+  max-height: 45vh;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-top: 2px solid var(--wd-editor-ink);
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-ink);
+  font: 400 15px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+}
+.wd-editor * {
+  box-sizing: border-box;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+}
+.wd-editor > * + * {
+  margin-top: 8px;
+}
+.wd-editor__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.wd-editor__who {
+  font-weight: 600;
+}
+.wd-editor__pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.wd-editor a {
+  color: var(--wd-editor-mark);
+  text-decoration: underline;
+}
+.wd-editor a[aria-current='page'] {
+  color: var(--wd-editor-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.wd-editor__hidden summary {
+  cursor: pointer;
+}
+.wd-editor__boxes {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+.wd-editor__hidden[hidden],
+.wd-editor__list:empty {
+  display: none;
+}
+.wd-editor textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--wd-editor-line);
+  border-radius: 0;
+  background: var(--wd-editor-paper);
+  resize: vertical;
+}
+.wd-editor__list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+.wd-editor__item {
+  padding: 6px 8px;
+  border-left: 4px solid var(--wd-editor-changed);
+  overflow-wrap: anywhere;
+}
+.wd-editor__item[data-problem] {
+  border-left-color: var(--wd-editor-problem);
+}
+.wd-editor__waiting[hidden] {
+  display: none;
+}
+.wd-editor__waiting-note {
+  font-weight: 600;
+}
+.wd-editor__waiting .wd-editor__list {
+  margin-top: 4px;
+}
+.wd-editor__item[data-state='waiting'] {
+  border-left-color: var(--wd-editor-saved);
+}
+.wd-editor__item[data-state='stuck'] {
+  border-left-color: var(--wd-editor-problem);
+}
+.wd-editor__waiting[data-state='stuck'] .wd-editor__waiting-note {
+  color: var(--wd-editor-problem);
+}
+.wd-editor__old {
+  text-decoration: line-through;
+}
+.wd-editor__new {
+  font-weight: 600;
+}
+.wd-editor__problem {
+  color: var(--wd-editor-problem);
+}
+.wd-editor__choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.wd-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.wd-editor button {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--wd-editor-ink);
+  border-radius: 0;
+  background: var(--wd-editor-paper);
+  cursor: pointer;
+}
+.wd-editor__undo {
+  margin-left: 8px;
+}
+.wd-editor .wd-editor__save {
+  background: var(--wd-editor-ink);
+  color: var(--wd-editor-paper);
+  font-weight: 600;
+}
+.wd-editor button:disabled {
+  border-color: var(--wd-editor-line);
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-line);
+  cursor: not-allowed;
+}
+.wd-editor :focus-visible {
+  outline: 3px solid var(--wd-editor-mark);
+  outline-offset: 2px;
+}
+.wd-editor__status[data-kind='problem'] {
+  color: var(--wd-editor-problem);
+  font-weight: 600;
+}
+.wd-editor__status[data-kind='saved'] {
+  color: var(--wd-editor-saved);
+  font-weight: 600;
+}
+.wd-editor__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-editor] {
+    --wd-editor-ink: #f2f3f5;
+    --wd-editor-paper: #16181c;
+    --wd-editor-line: #a3acb9;
+    --wd-editor-mark: #8ab4f8;
+    --wd-editor-changed: #f2b85c;
+    --wd-editor-problem: #f6aea9;
+    --wd-editor-saved: #7fd69a;
+  }
+}
+
+.wd-editor__count {
+  font-weight: 600;
+}
+.wd-editor__count:empty {
+  display: none;
+}
+.wd-editor__count[data-over='true'] {
+  color: var(--wd-editor-problem);
+}
+.wd-editor__note {
+  font-weight: 600;
+}
+.wd-editor__note[hidden],
+.wd-editor button[hidden] {
+  display: none;
+}

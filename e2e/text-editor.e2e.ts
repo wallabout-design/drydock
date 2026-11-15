@@ -1,0 +1,241 @@
+import { expect, test, type Page } from '@playwright/test';
+
+// The text editor in a real browser, against the fixture site in server.mjs.
+// Texts are named by key (data-copy), never by repeating their words, except
+// where a test types its own.
+
+const AUTO = 'http://127.0.0.1:4811';
+const REVIEW = 'http://127.0.0.1:4812';
+const TITLE = '[data-copy="home.title"]';
+const INTRO = '[data-copy="home.intro"]';
+
+async function state(page: Page, origin = AUTO): Promise<{ texts: Record<string, string> }> {
+  return (await page.request.get(`${origin}/__test/state`)).json();
+}
+
+async function open(page: Page, origin = AUTO) {
+  await page.request.post(`${origin}/__test/reset`);
+  await page.context().addCookies([{ name: 'test-user', value: 'ed@example.com', url: origin }]);
+  await page.goto(`${origin}/admin/edit?page=/`);
+  await expect(page.locator('html')).toHaveAttribute('data-editor', 'on');
+}
+
+/** Clicks a text, replaces what it says and presses Enter. */
+async function change(page: Page, selector: string, words: string) {
+  await page.locator(selector).click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type(words);
+  await page.keyboard.press('Enter');
+}
+
+const bar = (page: Page) => page.getByRole('complementary', { name: 'text editor' });
+const status = (page: Page) => bar(page).getByRole('status');
+const save = (page: Page) => bar(page).locator('.wd-editor__save');
+
+test.describe('changes go live on their own', () => {
+  test('edit a text, save it, undo the save', async ({ page }) => {
+    await open(page);
+    await expect(save(page)).toBeDisabled();
+    await change(page, TITLE, 'Hello from the lake');
+    await expect(page.locator(TITLE)).toHaveText('Hello from the lake');
+    await expect(bar(page).getByRole('list', { name: 'changes to save' }).getByRole('listitem')).toHaveCount(1);
+    await expect(save(page)).toHaveText('save 1 change');
+
+    await save(page).click();
+    await expect(status(page)).toContainText('on the site now');
+    expect((await state(page)).texts['home.title']).toBe('Hello from the lake');
+    await expect(save(page)).toBeDisabled();
+
+    await bar(page).getByRole('button', { name: 'undo last save' }).click();
+    await expect(status(page)).toContainText('back to how it was');
+    await expect(page.locator(TITLE)).toHaveText('Welcome to the house');
+    expect((await state(page)).texts['home.title']).toBe('Welcome to the house');
+    await expect(bar(page).getByRole('button', { name: 'undo last save' })).toBeHidden();
+  });
+
+  test('several texts are sent as one change', async ({ page }) => {
+    await open(page);
+    await change(page, TITLE, 'One');
+    await change(page, INTRO, 'Two');
+    await expect(save(page)).toHaveText('save 2 changes');
+    await save(page).click();
+    await expect(status(page)).toContainText('on the site now');
+    const { texts } = await state(page);
+    expect([texts['home.title'], texts['home.intro']]).toEqual(['One', 'Two']);
+    const changes = await (await page.request.get(`${AUTO}/admin/changes`, { headers: { cookie: 'test-user=ed@example.com' } })).text();
+    expect(changes.match(/<strong>ed@example.com<\/strong>/g)).toHaveLength(1);
+  });
+
+  test('undoing an unsaved edit puts the text back', async ({ page }) => {
+    await open(page);
+    await change(page, TITLE, 'Not yet');
+    await bar(page).getByRole('button', { name: /^undo the change/ }).click();
+    await expect(page.locator(TITLE)).toHaveText('Welcome to the house');
+    await expect(save(page)).toBeDisabled();
+  });
+
+  test('Escape drops what was typed', async ({ page }) => {
+    await open(page);
+    await page.locator(TITLE).click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('Dropped');
+    await page.keyboard.press('Escape');
+    await expect(page.locator(TITLE)).toHaveText('Welcome to the house');
+    await expect(save(page)).toBeDisabled();
+  });
+
+  test('a text inside a link is edited, not followed', async ({ page }) => {
+    await open(page);
+    await change(page, '[data-copy="home.cta"]', 'Reserve');
+    await expect(page).toHaveURL(/\/admin\/edit/);
+    await page.getByRole('link', { name: 'Other page' }).click();
+    await expect(page).toHaveURL(/\/admin\/edit/);
+  });
+
+  test('the character counter appears near the limit', async ({ page }) => {
+    await open(page);
+    await page.locator(TITLE).click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('x'.repeat(10));
+    await expect(bar(page).locator('.wd-editor__count')).toHaveText('');
+    await page.keyboard.type('x'.repeat(15));
+    await expect(bar(page).locator('.wd-editor__count')).toHaveText('5 characters left');
+  });
+
+  test('a text over its limit cannot be saved', async ({ page }) => {
+    await open(page);
+    await page.locator(TITLE).click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('y'.repeat(34));
+    await expect(bar(page).locator('.wd-editor__count')).toHaveText('4 over the limit of 30');
+    await expect(status(page)).toContainText('too long');
+    await page.keyboard.press('Enter');
+    await expect(save(page)).toBeDisabled();
+    await expect(bar(page).locator('.wd-editor__problem')).toContainText('fits 30');
+    expect((await state(page)).texts['home.title']).toBe('Welcome to the house');
+    // Shortening it clears the problem.
+    await change(page, TITLE, 'Short again');
+    await expect(save(page)).toBeEnabled();
+  });
+
+  test('a site rule is checked as you type', async ({ page }) => {
+    await open(page);
+    await page.locator(INTRO).click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('Find us at 12 Main Street');
+    // Still typing: the message is already there.
+    await expect(status(page)).toContainText('leave the street name out');
+    await page.keyboard.press('Enter');
+    await expect(bar(page).locator('.wd-editor__problem')).toContainText('leave the street name out');
+    await expect(save(page)).toBeDisabled();
+    expect((await state(page)).texts['home.intro']).toBe('A quiet place by the lake.');
+  });
+
+  test('someone else changed the text: use mine instead', async ({ page }) => {
+    await open(page);
+    await page.request.post(`${AUTO}/__test/other`, { data: { key: 'home.title', text: 'Their words' } });
+    await change(page, TITLE, 'My words');
+    await save(page).click();
+    await expect(status(page)).toContainText('someone changed');
+    const item = bar(page).locator('[data-key="home.title"]');
+    await expect(item).toContainText('Their words');
+    expect((await state(page)).texts['home.title']).toBe('Their words');
+
+    await item.getByRole('button', { name: 'use mine instead' }).click();
+    await expect(status(page)).toContainText('on the site now');
+    expect((await state(page)).texts['home.title']).toBe('My words');
+    await expect(page.locator(TITLE)).toHaveText('My words');
+  });
+
+  test('someone else changed the text: use the site’s text', async ({ page }) => {
+    await open(page);
+    await page.request.post(`${AUTO}/__test/other`, { data: { key: 'home.title', text: 'Their words' } });
+    await change(page, TITLE, 'My words');
+    await save(page).click();
+    await bar(page).getByRole('button', { name: 'use the site’s text' }).click();
+    await expect(page.locator(TITLE)).toHaveText('Their words');
+    await expect(save(page)).toBeDisabled();
+    expect((await state(page)).texts['home.title']).toBe('Their words');
+  });
+
+  test('markup is refused', async ({ page }) => {
+    await open(page);
+    await change(page, TITLE, '<b>Bold</b>');
+    await expect(bar(page).locator('.wd-editor__problem')).toContainText('plain words');
+    await expect(save(page)).toBeDisabled();
+  });
+
+  test('leaving with unsaved changes asks first', async ({ page }) => {
+    await open(page);
+    await change(page, TITLE, 'Unsaved');
+    const dialogs: string[] = [];
+    page.on('dialog', (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    });
+    await page.goto(`${AUTO}/other`).catch(() => undefined);
+    expect(dialogs).toEqual(['beforeunload']);
+    await expect(page.locator(TITLE)).toHaveText('Unsaved');
+    await expect(save(page)).toHaveText('save 1 change');
+  });
+
+  test('saved changes leave without asking', async ({ page }) => {
+    await open(page);
+    await change(page, TITLE, 'Saved');
+    await save(page).click();
+    await expect(status(page)).toContainText('on the site now');
+    const dialogs: string[] = [];
+    page.on('dialog', (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    });
+    await page.goto(`${AUTO}/other`);
+    expect(dialogs).toEqual([]);
+  });
+
+  test('works with the keyboard alone', async ({ page }) => {
+    await open(page);
+    // Tab until the focus is on the element the selector names.
+    const focusOn = async (selector: string) => {
+      for (let presses = 0; presses < 20; presses++) {
+        if (await page.evaluate((sel) => document.activeElement?.matches(sel) ?? false, selector)) return;
+        await page.keyboard.press('Tab');
+      }
+      throw new Error(`never reached ${selector} with Tab`);
+    };
+    await focusOn(TITLE);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Typed by keyboard');
+    await page.keyboard.press('Enter');
+    await expect(page.locator(TITLE)).toBeFocused();
+    await expect(page.locator(TITLE)).toHaveText('Typed by keyboard');
+    await focusOn('.wd-editor__save');
+    await page.keyboard.press('Enter');
+    await expect(status(page)).toContainText('on the site now');
+    expect((await state(page)).texts['home.title']).toBe('Typed by keyboard');
+  });
+});
+
+test.describe('changes wait for an admin', () => {
+  test('the bar says so, and the text is not live until approved', async ({ page }) => {
+    await open(page, REVIEW);
+    await expect(bar(page)).toContainText('wait for an admin to approve');
+    await change(page, TITLE, 'Waiting words');
+    await save(page).click();
+    await expect(status(page)).toContainText('once an admin approves it');
+    await expect(page.locator(TITLE)).toHaveAttribute('data-editor-state', 'waiting');
+    await expect(bar(page).getByRole('button', { name: 'undo last save' })).toBeHidden();
+    expect((await state(page, REVIEW)).texts['home.title']).toBe('Welcome to the house');
+
+    await page.request.post(`${REVIEW}/__test/approve`);
+    expect((await state(page, REVIEW)).texts['home.title']).toBe('Waiting words');
+  });
+});
+
+test.describe('signed out', () => {
+  test('the edit view gives nothing', async ({ page }) => {
+    const response = await page.request.get(`${AUTO}/admin/edit?page=/`);
+    expect(response.status()).toBe(403);
+    expect(await response.text()).toBe('');
+  });
+});

@@ -151,6 +151,29 @@ export function createEditor(options) {
         }
         return problems.length > 0 ? { problems } : { ops: checked };
     }
+    /** Runs a text through the declaration's checks (site rules too) without saving it, so the editor can warn while someone types. */
+    async function check(request) {
+        if (request.method !== 'POST')
+            return wrongMethod('POST');
+        const gate = writeGate(request, true);
+        if (gate)
+            return gate;
+        const body = await readBody(request);
+        if (body instanceof Response)
+            return body;
+        let parsed;
+        try {
+            parsed = JSON.parse(body.text);
+        }
+        catch {
+            parsed = null;
+        }
+        if (!isRecord(parsed) || !isString(parsed.key) || !isString(parsed.text)) {
+            return json(400, { error: 'malformed', message: 'The editor sent something this site did not understand. Reload the page and try again.' });
+        }
+        const result = content.validateText(parsed.key, parsed.text);
+        return json(200, { ok: result.ok, problems: result.problems });
+    }
     async function submit(request, identity) {
         if (request.method !== 'POST')
             return wrongMethod('POST');
@@ -215,6 +238,7 @@ export function createEditor(options) {
             mode,
             page,
             api: '/admin/api/changes',
+            check: '/admin/api/check',
             changesPage: '/admin/changes',
             texts: [...content.texts.values()].map(({ key, max, label }) => ({ key, max, label, current: state.texts[key] ?? null })),
             lists: [...content.lists.values()].map(({ name, label, singular }) => ({ name, label, singular })),
@@ -289,6 +313,8 @@ export function createEditor(options) {
                 return editorFile(request, 'text/javascript; charset=utf-8', EDITOR_JS);
             if (pathname === '/admin/editor.css')
                 return editorFile(request, 'text/css; charset=utf-8', EDITOR_CSS);
+            if (pathname === '/admin/api/check')
+                return can(identity, 'edit') ? check(request) : forbidden();
             if (pathname === '/admin/api/changes')
                 return can(identity, 'edit') ? submit(request, identity) : forbidden();
             const decision = /^\/admin\/api\/changes\/([^/]+)\/(approve|reject|undo)$/.exec(pathname);

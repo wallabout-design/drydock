@@ -70,7 +70,7 @@ describe('signed out: nothing given, nothing changed', () => {
   const routes: [string, string][] = [
     ['GET', '/admin'], ['GET', '/admin/'], ['GET', '/admin/edit?page=/'], ['GET', '/admin/changes'],
     ['GET', '/admin/editor.js'], ['GET', '/admin/editor.css'], ['GET', '/admin/nothing-here'],
-    ['POST', '/admin/api/changes'], ['POST', '/admin/api/changes/c1/approve'],
+    ['POST', '/admin/api/changes'], ['POST', '/admin/api/check'], ['POST', '/admin/api/changes/c1/approve'],
     ['POST', '/admin/api/changes/c1/reject'], ['POST', '/admin/api/changes/c1/undo'],
   ];
   for (const mode of ['auto', 'review'] as const) {
@@ -135,6 +135,20 @@ describe('as an editor in auto mode', () => {
     const { change } = await res.json();
     expect(change).toMatchObject({ by: 'ed@example.com', state: 'live' });
     expect((await store.read()).texts['home.title']).toBe('Hi there');
+  });
+
+  it('checks a text without saving it', async () => {
+    const { editor, store } = make('auto');
+    const ask = async (body: unknown, over = {}) => (await call(editor, 'editor', 'POST', '/admin/api/check', { body, ...over }))!;
+    const fine = await ask({ key: 'home.title', text: 'Hi there' });
+    expect(fine.status).toBe(200);
+    expect(await fine.json()).toEqual({ ok: true, problems: [] });
+    const long = await (await ask({ key: 'home.title', text: 'x'.repeat(21) })).json();
+    expect(long).toMatchObject({ ok: false, problems: [{ field: 'home.title', kind: 'too-long' }] });
+    expect((await ask({ key: 'home.title' })).status).toBe(400);
+    expect((await ask({ key: 'home.title', text: 'Hi' }, { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await call(editor, 'editor', 'GET', '/admin/api/check'))!.status).toBe(405);
+    expect(await store.read()).toEqual(START);
   });
 
   it('cleans the text and adds an item', async () => {
