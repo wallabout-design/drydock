@@ -17,10 +17,20 @@
     "./server": {
       "types": "./dist/server/index.d.ts",
       "default": "./dist/server/index.js"
-    }
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "default": "./dist/react/index.js"
+    },
+    "./astro": {
+      "types": "./dist/astro/index.d.ts",
+      "default": "./dist/astro/index.js"
+    },
+    "./astro/Text.astro": "./dist/astro/Text.astro",
+    "./astro/List.astro": "./dist/astro/List.astro"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/",
     "check": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "verify": "npm run check && npm run build && npm run test",
@@ -28,11 +38,23 @@
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
     "typescript": "7.0.2",
     "vite": "8.1.7",
     "vitest": "5.0.5"
   },
   "dependencies": {
     "jose": "6.2.17"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   }
 }

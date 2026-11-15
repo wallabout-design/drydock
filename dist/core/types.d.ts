@@ -102,9 +102,9 @@ export interface Rule {
     message: string;
 }
 export interface ContentDeclaration {
-    texts?: TextDeclaration[];
-    lists?: ListDeclaration[];
-    rules?: Rule[];
+    texts?: readonly TextDeclaration[];
+    lists?: readonly ListDeclaration[];
+    rules?: readonly Rule[];
 }
 export type ProblemKind = 'unknown' | 'type' | 'empty' | 'too-long' | 'markup' | 'stacked-marks' | 'format' | 'range' | 'rule' | 'too-big';
 /** Why a value was refused, in words staff can act on. */
