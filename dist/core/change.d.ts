@@ -1,11 +1,7 @@
+import type { ListItem } from './read.js';
 import type { ItemValues } from './types.js';
 /** The most operations in one change (content-editing.md, "limits"). */
 export declare const MAX_OPERATIONS = 50;
-/** One list item as stored: an id that never changes, and its fields. */
-export interface ListItem {
-    id: string;
-    values: ItemValues;
-}
 /** The content as stored: every text's words, and every list's items in order. */
 export interface ContentState {
     texts: Record<string, string>;

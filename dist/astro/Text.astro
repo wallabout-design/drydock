@@ -1,0 +1,16 @@
+---
+// The text for a key, in an element marked data-copy. The reader comes from
+// the `reader` prop or Astro.locals.content (set in the site's middleware).
+// An unknown key is a type error.
+import { textAttrs, type Reader, type TextKey } from '@wallabout-design/editor';
+
+interface Props {
+  k: TextKey;
+  as?: string;
+  reader?: Reader;
+  class?: string;
+}
+const { k, as: Tag = 'span', reader = (Astro.locals as { content?: Reader }).content, class: className } = Astro.props;
+if (!reader) throw new Error('Text needs a reader: pass reader or set Astro.locals.content');
+---
+<Tag class={className} {...textAttrs(k)}>{reader.text(k)}</Tag>

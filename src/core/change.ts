@@ -1,16 +1,11 @@
 // A change: one edit, or one undo, to a site's content, as a list of operations.
 // Plain TypeScript, with no framework, Worker or DOM types. Every store calls
 // applyOperations on the content it holds, so all stores refuse and apply alike.
+import type { ListItem } from './read.js';
 import type { ItemValues } from './types.js';
 
 /** The most operations in one change (content-editing.md, "limits"). */
 export const MAX_OPERATIONS = 50;
-
-/** One list item as stored: an id that never changes, and its fields. */
-export interface ListItem {
-  id: string;
-  values: ItemValues;
-}
 
 /** The content as stored: every text's words, and every list's items in order. */
 export interface ContentState {
