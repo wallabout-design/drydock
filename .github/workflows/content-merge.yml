@@ -1,0 +1,101 @@
+name: content-merge
+
+# Reusable. Lets a site's content edits go live without a person, in `auto`
+# mode with the git store (standards/content-editing.md). When the site's tests
+# (its `ci` workflow) finish on a pull request from a content-edit/* branch,
+# this squash-merges the exact commit that was tested, but only if:
+#
+# - every changed file is under content/, and is the texts file or an item of a
+#   declared list (so no key or limit can change: those live in the site's code);
+# - every changed value passes the site's own rules again;
+# - the `test` check passed.
+#
+# Otherwise the pull request is labelled status:needs-human-review, with a
+# comment saying why. In `review` mode it does nothing: an admin's approval in
+# the editor merges the pull request.
+#
+# The site calls it from a workflow triggered by workflow_run after ci, so it
+# always runs from the site's default branch. It never checks out the pull
+# request's branch and only reads the pull request through the API, so a branch
+# cannot change the check that judges it. README.md ("merge content edits")
+# shows the lines a site adds.
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: 'The site''s mode: "auto" or "review". Anything but "auto" does nothing.'
+        type: string
+        required: true
+      declaration:
+        description: 'Path in the site to the module that exports the result of defineContent as `content`.'
+        type: string
+        required: true
+      branch-prefix:
+        description: 'What an editor''s branch names start with (the store''s branchPrefix).'
+        type: string
+        default: content-edit/
+      test-check:
+        description: 'The check run that must pass on the commit.'
+        type: string
+        default: test
+      base-branch:
+        description: 'The branch pull requests merge into. Default: the repository''s default branch.'
+        type: string
+        default: ''
+      editor-path:
+        description: 'Where the editor package is, after npm ci.'
+        type: string
+        default: node_modules/@wallabout-design/editor
+      head-sha:
+        description: 'Check this commit, for a run started by hand. Default: the commit ci tested.'
+        type: string
+        default: ''
+      head-branch:
+        description: 'Check this branch, for a run started by hand. Default: the branch ci tested.'
+        type: string
+        default: ''
+
+# The calling workflow must grant at least these: a reusable workflow cannot
+# take more than its caller gives.
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: content-merge-${{ inputs.head-branch || github.event.workflow_run.head_branch }}
+    if: >-
+      inputs.mode == 'auto' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, inputs.branch-prefix) &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    steps:
+      # The default branch (or base-branch), never the pull request: its code
+      # and declaration are the site's reviewed ones.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.base-branch || github.event.repository.default_branch }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Values go in through the environment, never into the command line, so
+      # a branch name cannot inject shell.
+      - run: node "$EDITOR_PATH/dist/merge/cli.js"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EDITOR_PATH: ${{ inputs.editor-path }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ inputs.head-sha || github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ inputs.head-branch || github.event.workflow_run.head_branch }}
+          MODE: ${{ inputs.mode }}
+          DECLARATION: ${{ inputs.declaration }}
+          BASE_BRANCH: ${{ inputs.base-branch || github.event.repository.default_branch }}
+          BRANCH_PREFIX: ${{ inputs.branch-prefix }}
+          TEST_CHECK: ${{ inputs.test-check }}
