@@ -69,7 +69,7 @@ describe('paths the editor does not own', () => {
 describe('signed out: nothing given, nothing changed', () => {
   const routes: [string, string][] = [
     ['GET', '/admin'], ['GET', '/admin/'], ['GET', '/admin/edit?page=/'], ['GET', '/admin/changes'],
-    ['GET', '/admin/editor.js'], ['GET', '/admin/editor.css'], ['GET', '/admin/nothing-here'],
+    ['GET', '/admin/editor.js'], ['GET', '/admin/editor.css'], ['GET', '/admin/item-form.js'], ['GET', '/admin/list-page.js'], ['GET', '/admin/lists/rooms'], ['GET', '/admin/nothing-here'],
     ['POST', '/admin/api/changes'], ['POST', '/admin/api/check'], ['POST', '/admin/api/changes/c1/approve'],
     ['POST', '/admin/api/changes/c1/reject'], ['POST', '/admin/api/changes/c1/undo'],
   ];
@@ -126,6 +126,30 @@ describe('as an editor in auto mode', () => {
     const { editor } = make('auto');
     expect((await call(editor, 'editor', 'GET', '/admin/editor.js'))!.headers.get('content-type')).toContain('javascript');
     expect((await call(editor, 'editor', 'GET', '/admin/editor.css'))!.headers.get('content-type')).toContain('text/css');
+  });
+
+  it('shows a list page with the items in order and the declaration', async () => {
+    const { editor } = make('auto');
+    const res = (await call(editor, 'editor', 'GET', '/admin/lists/rooms'))!;
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const html = await res.text();
+    expect(html).toContain('src="/admin/list-page.js"');
+    const settings = JSON.parse(/id="editor-settings">(.*?)<\/script>/.exec(html)![1]!);
+    expect(settings).toMatchObject({ mode: 'auto', api: '/admin/api/changes', list: { name: 'rooms', singular: 'room', maxItems: 3 } });
+    expect(settings.items).toEqual([{ id: 'a', values: { title: 'Blue' } }]);
+    expect((await call(editor, 'editor', 'GET', '/admin/lists/nothing'))!.status).toBe(404);
+    expect((await call(editor, 'editor', 'POST', '/admin/lists/rooms'))!.status).toBe(405);
+  });
+
+  it('serves the list page scripts', async () => {
+    const { editor } = make('auto');
+    for (const path of ['/admin/item-form.js', '/admin/list-page.js']) {
+      const res = (await call(editor, 'editor', 'GET', path))!;
+      expect([path, res.status, res.headers.get('content-type')]).toEqual([path, 200, 'text/javascript; charset=utf-8']);
+      expect((await res.text()).length).toBeGreaterThan(500);
+    }
   });
 
   it('submits a text change, which goes live', async () => {

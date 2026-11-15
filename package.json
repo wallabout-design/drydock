@@ -30,10 +30,11 @@
     "./astro/Text.astro": "./dist/astro/Text.astro",
     "./astro/List.astro": "./dist/astro/List.astro",
     "./editor.js": "./dist/editor.js",
-    "./editor.css": "./dist/editor.css"
+    "./editor.css": "./dist/editor.css",
+    "./item-form.js": "./dist/item-form.js"
   },
   "scripts": {
-    "build": "node scripts/build-assets.mjs && rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/ && cp src/editor/editor.js src/editor/editor.css dist/",
+    "build": "node scripts/build-assets.mjs && rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/ && cp src/editor/*.js src/editor/editor.css dist/",
     "check": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "playwright test",

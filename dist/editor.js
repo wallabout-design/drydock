@@ -241,6 +241,7 @@ document.addEventListener(
   (event) => {
     if (!(event.target instanceof Element) || bar.contains(event.target)) return;
     // Links and buttons on the page are switched off here: this view is for editing.
+    if (event.target.closest('.wd-editor__list-link')) return;
     const link = event.target.closest('a[href], button, input, select, summary');
     const el = marked(event.target);
     if (link || el) event.preventDefault();
@@ -475,6 +476,15 @@ for (const el of document.querySelectorAll('[data-copy]:not(meta)')) {
   shown.set(key, text);
   el.tabIndex = 0;
   el.setAttribute('aria-describedby', hint.id);
+}
+// A list on the page gets a link to its own page, where items are added, changed, removed and moved.
+const listNames = new Map((settings.lists ?? []).map((l) => [l.name, l]));
+for (const el of document.querySelectorAll('[data-list]')) {
+  const found = listNames.get(el.getAttribute('data-list') ?? '');
+  if (!found) continue;
+  const link = make('a', { class: 'wd-editor__list-link', href: `/admin/lists/${encodeURIComponent(found.name)}` }, ['Edit this list']);
+  link.setAttribute('aria-label', `Edit this list: ${found.label}`);
+  el.insertAdjacentElement('afterend', link);
 }
 document.body.append(bar);
 document.documentElement.dataset.editor = 'on';
