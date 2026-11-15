@@ -134,11 +134,13 @@ export interface ListItemInput {
  *
  * - `content/texts.json`: `{ "home.hero.title": "words", ... }`
  * - `content/<list>/<id>.json`: one item's fields. With a hand order, items
- *   come in file name order (`001-first.json`).
+ *   come in `position` order (a whole number the git store writes), then file
+ *   name order (`001-first.json`).
  */
 export function snapshotFromFiles(content: Content, files: Readonly<Record<string, string>>, report: Report = () => {}): Snapshot {
   const texts: [string, unknown][] = [];
   const lists: [string, ListItemInput][] = [];
+  const positions = new Map<string, number>();
   for (const path of Object.keys(files).sort()) {
     const m = /(?:^|\/)content\/(.+)$/.exec(path) ?? /^(.+)$/.exec(path);
     const rel = m![1]!;
@@ -159,7 +161,18 @@ export function snapshotFromFiles(content: Content, files: Readonly<Record<strin
       report('content: a content file is not where one belongs', { path: rel });
       continue;
     }
-    lists.push([parts[1]!, { id: parts[2]!, fields: json }]);
+    let fields = json;
+    if (json && typeof json === 'object' && !Array.isArray(json) && 'position' in json) {
+      const { position, ...rest } = json as Record<string, unknown>;
+      if (typeof position === 'number') positions.set(`${parts[1]}/${parts[2]}`, position);
+      fields = rest;
+    }
+    lists.push([parts[1]!, { id: parts[2]!, fields }]);
+  }
+  // Array.sort is stable: items without a position keep their file name order.
+  if (positions.size > 0) {
+    const at = ([list, item]: [string, ListItemInput]) => positions.get(`${list}/${item.id}`) ?? Infinity;
+    lists.sort((a, b) => (a[0] === b[0] ? (at(a) === at(b) ? 0 : at(a) < at(b) ? -1 : 1) : a[0] < b[0] ? -1 : 1));
   }
   return buildSnapshot(content, { texts, lists }, report);
 }

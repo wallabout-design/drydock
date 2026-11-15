@@ -71,7 +71,8 @@ export interface ListItemInput {
  *
  * - `content/texts.json`: `{ "home.hero.title": "words", ... }`
  * - `content/<list>/<id>.json`: one item's fields. With a hand order, items
- *   come in file name order (`001-first.json`).
+ *   come in `position` order (a whole number the git store writes), then file
+ *   name order (`001-first.json`).
  */
 export declare function snapshotFromFiles(content: Content, files: Readonly<Record<string, string>>, report?: Report): Snapshot;
 /** `data-list` for the container of a list. */

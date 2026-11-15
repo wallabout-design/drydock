@@ -88,6 +88,18 @@ describe('git loader (snapshotFromFiles)', () => {
   });
 });
 
+describe('git loader: position', () => {
+  it('orders a hand list by position, ahead of file name order, and does not count position as a field', () => {
+    const s = snapshotFromFiles(content, {
+      'content/rooms/a.json': JSON.stringify({ position: 3000, title: 'A' }),
+      'content/rooms/b.json': JSON.stringify({ position: 1000, title: 'B' }),
+      'content/rooms/c.json': JSON.stringify({ position: 2000, title: 'C', beds: 2 }),
+    });
+    expect(s.lists.rooms?.map((i) => i.id)).toEqual(['b', 'c', 'a']);
+    expect(s.lists.rooms?.[1]?.values).toEqual({ title: 'C', beds: 2 });
+  });
+});
+
 describe('D1 loader', () => {
   const db = (rows: { texts?: unknown[]; items?: Record<string, unknown[]>; fail?: boolean }): ReadDb & { sql: string[] } => {
     const sql: string[] = [];

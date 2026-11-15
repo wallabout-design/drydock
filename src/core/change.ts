@@ -36,7 +36,7 @@ const STALE: Problem = { kind: 'stale' };
 const bad = (message: string): Problem => ({ kind: 'invalid', message });
 
 /** Deep equality for stored values, which are plain JSON-like data. */
-function sameValue(a: unknown, b: unknown): boolean {
+export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
