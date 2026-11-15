@@ -1,0 +1,34 @@
+name: content-merge-selftest
+
+# Runs content-merge.yml on this repository as if it were a site, to try the
+# workflow on a test pull request: start it by hand with the branch and commit
+# of a pull request into a throwaway base branch. It uses this repository's own
+# built dist/, and never touches main unless a person names main as the base.
+on:
+  workflow_dispatch:
+    inputs:
+      base-branch:
+        description: Branch the test pull request merges into
+        required: true
+      head-branch:
+        description: The test pull request's branch (content-edit/...)
+        required: true
+      head-sha:
+        description: Its tip commit
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge:
+    uses: ./.github/workflows/content-merge.yml
+    with:
+      mode: auto
+      declaration: .github/content-merge-selftest/declaration.mjs
+      editor-path: .
+      base-branch: ${{ inputs.base-branch }}
+      head-branch: ${{ inputs.head-branch }}
+      head-sha: ${{ inputs.head-sha }}
