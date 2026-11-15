@@ -13,6 +13,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
     }
   },
   "scripts": {
@@ -27,5 +31,8 @@
     "typescript": "7.0.2",
     "vite": "8.1.7",
     "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "jose": "6.2.17"
   }
 }
