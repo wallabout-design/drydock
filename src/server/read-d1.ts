@@ -14,10 +14,10 @@ export interface ReadStatement {
   all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
 }
 
-// The package's migration (with the D1 store) creates these. `fields` is the
+// migrations/0001_content.sql creates these. `data` (read as `fields`) is the
 // item's JSON; `position` is the hand order.
-const TEXTS_SQL = 'SELECT key, value FROM texts';
-const ITEMS_SQL = 'SELECT id, fields FROM items WHERE list = ? ORDER BY position, id';
+const TEXTS_SQL = 'SELECT key, text AS value FROM content_texts';
+const ITEMS_SQL = 'SELECT id, data AS fields FROM content_items WHERE list = ? ORDER BY position, id';
 
 export interface LoadOptions {
   /** The lists this request shows. Others are not queried. */

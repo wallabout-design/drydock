@@ -9,3 +9,7 @@ npm install github:wallabout-design/editor#v0.1.0
 ```
 
 Licensed under the MIT licence (see `LICENSE`). The design is `standards/content-editing.md` in `wallabout-design/standards`.
+
+## D1 store
+
+`d1Store(db, { content })` from `@wallabout-design/editor/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/editor/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
