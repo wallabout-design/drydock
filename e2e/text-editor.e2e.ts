@@ -165,18 +165,26 @@ test.describe('changes go live on their own', () => {
     await expect(save(page)).toBeDisabled();
   });
 
+  // The browser asks before leaving a page whose beforeunload event is cancelled.
+  const asksBeforeLeaving = (page: Page) =>
+    page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+
   test('leaving with unsaved changes asks first', async ({ page }) => {
     await open(page);
+    expect(await asksBeforeLeaving(page)).toBe(false);
     await change(page, TITLE, 'Unsaved');
-    const dialogs: string[] = [];
-    page.on('dialog', (dialog) => {
-      dialogs.push(dialog.type());
-      void dialog.dismiss();
-    });
-    await page.goto(`${AUTO}/other`).catch(() => undefined);
-    expect(dialogs).toEqual(['beforeunload']);
-    await expect(page.locator(TITLE)).toHaveText('Unsaved');
-    await expect(save(page)).toHaveText('save 1 change');
+    expect(await asksBeforeLeaving(page)).toBe(true);
+    // Text still being typed counts too.
+    await bar(page).getByRole('button', { name: /^undo the change/ }).click();
+    expect(await asksBeforeLeaving(page)).toBe(false);
+    await page.locator(TITLE).click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('Half typed');
+    expect(await asksBeforeLeaving(page)).toBe(true);
   });
 
   test('saved changes leave without asking', async ({ page }) => {
@@ -184,13 +192,7 @@ test.describe('changes go live on their own', () => {
     await change(page, TITLE, 'Saved');
     await save(page).click();
     await expect(status(page)).toContainText('on the site now');
-    const dialogs: string[] = [];
-    page.on('dialog', (dialog) => {
-      dialogs.push(dialog.type());
-      void dialog.dismiss();
-    });
-    await page.goto(`${AUTO}/other`);
-    expect(dialogs).toEqual([]);
+    expect(await asksBeforeLeaving(page)).toBe(false);
   });
 
   test('works with the keyboard alone', async ({ page }) => {
