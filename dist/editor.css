@@ -2,7 +2,8 @@
    /admin/edit, for signed-in staff. Its own colours and system font, so it
    reads as a tool on top of any site, in light and dark. */
 
-:root[data-editor] {
+:root[data-editor],
+body[data-editor-page] {
   --wd-editor-ink: #14161a;
   --wd-editor-paper: #ffffff;
   --wd-editor-line: #5b6470;
@@ -224,7 +225,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root[data-editor] {
+  :root[data-editor],
+  body[data-editor-page] {
     --wd-editor-ink: #f2f3f5;
     --wd-editor-paper: #16181c;
     --wd-editor-line: #a3acb9;
@@ -233,6 +235,183 @@
     --wd-editor-problem: #f6aea9;
     --wd-editor-saved: #7fd69a;
   }
+}
+
+/* The link to a list's own page, next to the list on the edit view. */
+.wd-editor__list-link {
+  display: inline-block;
+  margin: 4px 0;
+  padding: 4px 10px;
+  border: 1px solid var(--wd-editor-ink);
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-ink);
+  font: 600 14px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  text-decoration: underline;
+}
+
+/* The list page and the item form (/admin/lists/<name>). */
+body[data-editor-page] {
+  margin: 0;
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-ink);
+  font: 400 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+body[data-editor-page] a {
+  color: var(--wd-editor-mark);
+}
+.wd-page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 16px;
+}
+.wd-page h1 {
+  margin: 8px 0;
+  font-size: 1.6rem;
+}
+.wd-list__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 2.5rem;
+}
+.wd-list__status[data-kind='problem'] {
+  color: var(--wd-editor-problem);
+  font-weight: 600;
+}
+.wd-list__status[data-kind='saved'] {
+  color: var(--wd-editor-saved);
+  font-weight: 600;
+}
+.wd-list__items {
+  display: grid;
+  gap: 0;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--wd-editor-line);
+}
+.wd-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--wd-editor-line);
+}
+.wd-list__title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.wd-list__actions,
+.wd-list__confirm,
+.wd-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.wd-list__full {
+  margin: 8px 0 0;
+  font-weight: 600;
+}
+.wd-list [hidden],
+.wd-list__items[hidden],
+.wd-list__empty[hidden],
+.wd-list__full[hidden],
+.wd-field [hidden],
+.wd-form [hidden],
+.wd-list__undo[hidden] {
+  display: none;
+}
+.wd-list__bar button,
+.wd-list__items button,
+.wd-list__add,
+.wd-form button {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--wd-editor-ink);
+  border-radius: 0;
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.wd-list__add,
+.wd-form .wd-form__save {
+  background: var(--wd-editor-ink);
+  color: var(--wd-editor-paper);
+  font-weight: 600;
+}
+.wd-list__add-row {
+  margin: 12px 0;
+}
+.wd-list button:disabled,
+.wd-form button:disabled {
+  border-color: var(--wd-editor-line);
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-line);
+  cursor: not-allowed;
+}
+.wd-list :focus-visible,
+.wd-form :focus-visible,
+.wd-page :focus-visible {
+  outline: 3px solid var(--wd-editor-mark);
+  outline-offset: 2px;
+}
+.wd-form {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 2px solid var(--wd-editor-ink);
+}
+.wd-form__title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.wd-field {
+  display: grid;
+  gap: 4px;
+}
+.wd-field label {
+  font-weight: 600;
+}
+.wd-field__box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wd-field__box input {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.wd-field__help {
+  margin: 0;
+  color: var(--wd-editor-line);
+  font-size: 0.9rem;
+}
+.wd-form input:not([type='checkbox']),
+.wd-form select,
+.wd-form textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--wd-editor-line);
+  border-radius: 0;
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-ink);
+  font: inherit;
+}
+.wd-form [aria-invalid='true'] {
+  border: 2px solid var(--wd-editor-problem);
+}
+.wd-field__error,
+.wd-form__summary {
+  margin: 0;
+  color: var(--wd-editor-problem);
+  font-weight: 600;
 }
 
 .wd-editor__count {

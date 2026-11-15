@@ -1,5 +1,6 @@
 import { can, identify } from './access.js';
-import { EDITOR_CSS, EDITOR_JS } from './editor-assets.js';
+import { orderItems } from '../core/read.js';
+import { EDITOR_CSS, EDITOR_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
 export const MAX_BODY_BYTES = 64 * 1024;
 const NO_STORE = { 'cache-control': 'no-store' };
 const json = (status, body) => Response.json(body, { status, headers: NO_STORE });
@@ -256,6 +257,51 @@ export function createEditor(options) {
         headers.set('x-robots-tag', 'noindex, nofollow');
         return new Response(request.method === 'HEAD' ? null : body, { status: 200, headers });
     }
+    /** The page for one list: its items in order, drawn by list-page.js from the settings block. */
+    async function listPage(request, identity, name) {
+        if (request.method !== 'GET' && request.method !== 'HEAD')
+            return wrongMethod('GET, HEAD');
+        const list = content.lists.get(name);
+        if (!list)
+            return notFound();
+        const state = await store.read();
+        const settings = {
+            editor: identity.email,
+            role: identity.role,
+            mode,
+            api: '/admin/api/changes',
+            check: '/admin/api/check',
+            changesPage: '/admin/changes',
+            list: {
+                name: list.name,
+                label: list.label,
+                singular: list.singular,
+                titleField: list.titleField,
+                fields: list.fields,
+                sort: list.sort,
+                maxItems: list.maxItems,
+            },
+            items: orderItems(content, name, state.lists[name] ?? []),
+        };
+        const data = JSON.stringify(settings).replace(/</g, '\\u003c');
+        const page = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+            `<meta name="robots" content="noindex, nofollow"><title>${escapeHtml(list.label)}</title>` +
+            '<link rel="stylesheet" href="/admin/editor.css"></head><body data-editor-page="list"><main class="wd-page">' +
+            `<p class="wd-page__nav"><a href="/admin/edit">back to editing</a> · <a href="/admin/changes">changes</a></p>` +
+            `<h1>Edit ${escapeHtml(list.label)}</h1>` +
+            `<p>${mode === 'review' ? 'What you save here waits for an admin to approve it, then it appears on the site.' : 'What you save here is on the site straight away.'}</p>` +
+            '<div id="wd-list" class="wd-list"><noscript><p>This page needs JavaScript to edit the list.</p></noscript></div></main>' +
+            `<script type="application/json" id="editor-settings">${data}</script><script type="module" src="/admin/list-page.js"></script></body></html>`;
+        return new Response(request.method === 'HEAD' ? null : page, {
+            status: 200,
+            headers: {
+                ...NO_STORE,
+                'content-type': 'text/html; charset=utf-8',
+                'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+                'x-robots-tag': 'noindex, nofollow',
+            },
+        });
+    }
     async function changesPage(request, identity) {
         if (request.method !== 'GET' && request.method !== 'HEAD')
             return wrongMethod('GET, HEAD');
@@ -309,6 +355,13 @@ export function createEditor(options) {
                 return editPage(request, identity);
             if (pathname === '/admin/changes')
                 return changesPage(request, identity);
+            const listMatch = /^\/admin\/lists\/([^/]+)$/.exec(pathname);
+            if (listMatch)
+                return listPage(request, identity, listMatch[1]);
+            if (pathname === '/admin/item-form.js')
+                return editorFile(request, 'text/javascript; charset=utf-8', ITEM_FORM_JS);
+            if (pathname === '/admin/list-page.js')
+                return editorFile(request, 'text/javascript; charset=utf-8', LIST_PAGE_JS);
             if (pathname === '/admin/editor.js')
                 return editorFile(request, 'text/javascript; charset=utf-8', EDITOR_JS);
             if (pathname === '/admin/editor.css')

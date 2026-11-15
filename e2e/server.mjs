@@ -20,6 +20,34 @@ const content = defineContent({
     { key: 'home.intro', default: 'A quiet place by the lake.', max: 120, label: 'Home intro' },
     { key: 'home.cta', default: 'Book a stay', max: 20, label: 'Booking button' },
   ],
+  lists: [
+    {
+      name: 'rooms',
+      label: 'rooms',
+      singular: 'room',
+      titleField: 'title',
+      sort: 'hand',
+      maxItems: 5,
+      fields: [
+        { name: 'title', label: 'Name', type: 'text', required: true, maxLength: 40 },
+        { name: 'blurb', label: 'About the room', type: 'longtext', maxLength: 200 },
+        { name: 'link', label: 'More information', type: 'link' },
+        { name: 'beds', label: 'Beds', type: 'number', min: 1, max: 10 },
+        { name: 'opens', label: 'First available', type: 'date' },
+        { name: 'pets', label: 'Pets welcome', type: 'checkbox' },
+        {
+          name: 'view',
+          label: 'View',
+          type: 'choice',
+          options: [
+            { value: 'lake', label: 'The lake' },
+            { value: 'garden', label: 'The garden' },
+          ],
+        },
+        { name: 'photo', label: 'Photo', type: 'image' },
+      ],
+    },
+  ],
   rules: [
     {
       name: 'no-street',
@@ -31,7 +59,13 @@ const content = defineContent({
 
 const START = () => ({
   texts: { 'home.title': 'Welcome to the house', 'home.intro': 'A quiet place by the lake.', 'home.cta': 'Book a stay' },
-  lists: {},
+  lists: {
+    rooms: [
+      { id: 'blue', values: { title: 'Blue room', beds: 2, pets: false, view: 'lake' } },
+      { id: 'attic', values: { title: 'Attic', pets: true } },
+      { id: 'porch', values: { title: 'Porch', pets: false } },
+    ],
+  },
 });
 
 const PAGE = `<!doctype html>
@@ -42,6 +76,11 @@ const PAGE = `<!doctype html>
 <h1 data-copy="home.title">Welcome to the house</h1>
 <p data-copy="home.intro">A quiet place by the lake.</p>
 <p><a href="/book" data-copy="home.cta">Book a stay</a></p>
+<ul data-list="rooms">
+<li data-item="blue">Blue room</li>
+<li data-item="attic">Attic</li>
+<li data-item="porch">Porch</li>
+</ul>
 </main>
 </body></html>`;
 
@@ -101,6 +140,12 @@ createServer(async (req, res) => {
     const { key, text } = JSON.parse(body.toString());
     const seen = (await store.read()).texts[key];
     const outcome = await store.submit({ ops: [{ op: 'setText', key, text, seen }], by: 'someone@example.com' }, 'auto');
+    return send(outcome.ok ? 200 : 409, outcome);
+  }
+  if (url.pathname === '/__test/submit') {
+    // Someone else sends a change of their own, live at once.
+    const { ops } = JSON.parse(body.toString());
+    const outcome = await store.submit({ ops, by: 'someone@example.com' }, 'auto');
     return send(outcome.ok ? 200 : 409, outcome);
   }
   if (url.pathname === '/__test/approve') {
