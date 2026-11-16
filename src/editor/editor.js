@@ -7,6 +7,9 @@
 // site trial's public/admin/edit.js, with the extras from Rutland Reserve's
 // CopyEditor: a counter, undo of the last save, "use mine instead" after a
 // stale refusal, a warning before leaving, and site rules as you type.
+// Lists are edited here too (the "lists on the page" section below): edit,
+// remove and move on each data-item, add on each data-list, each sent at once
+// as its own change and opening the same item form as the list page.
 
 const settings = JSON.parse(document.getElementById('editor-settings')?.textContent ?? '{}');
 const review = settings.mode === 'review';
@@ -241,7 +244,8 @@ document.addEventListener(
   (event) => {
     if (!(event.target instanceof Element) || bar.contains(event.target)) return;
     // Links and buttons on the page are switched off here: this view is for editing.
-    if (event.target.closest('.wd-editor__list-link')) return;
+    // The editor's own controls (the list link, item tools, the item form) are not.
+    if (event.target.closest('.wd-editor__list-link, [data-editor-ui]')) return;
     const link = event.target.closest('a[href], button, input, select, summary');
     const el = marked(event.target);
     if (link || el) event.preventDefault();
@@ -465,6 +469,285 @@ addEventListener('beforeunload', (event) => {
   event.returnValue = '';
 });
 
+// --- lists on the page -------------------------------------------------------
+
+const lists = new Map(); // name -> { decl, items: [{ id, values }], el }
+const newId = () => `i-${[...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+let formOpen = false;
+let removing = null; // { list, id } while an item asks "really remove?"
+
+const titleOf = (decl, values) => {
+  const title = values?.[decl.titleField];
+  return typeof title === 'string' && title !== '' ? title : `this ${decl.singular}`;
+};
+
+/** The order shown: as stored for a list moved by hand, otherwise by its sort field. */
+function ordered(entry) {
+  const { decl, items } = entry;
+  if (decl.sort === 'hand') return items;
+  const direction = decl.sort.order === 'desc' ? -1 : 1;
+  return [...items].sort((a, b) => {
+    const x = a.values[decl.sort.by];
+    const y = b.values[decl.sort.by];
+    if (x === y) return 0;
+    if (x === undefined) return 1;
+    if (y === undefined) return -1;
+    return (x < y ? -1 : 1) * direction;
+  });
+}
+
+const itemElements = (entry) =>
+  [...entry.el.querySelectorAll('[data-item]')].filter((el) => el.closest('[data-list]') === entry.el && entry.items.some((i) => i.id === el.getAttribute('data-item')));
+const elementOf = (entry, id) => itemElements(entry).find((el) => el.getAttribute('data-item') === id);
+
+/** Sends one change for a list. Gives { ok, change } or { problems } to show in words. */
+async function sendOps(entry, ops) {
+  const { status, body } = await post(settings.api, { ops });
+  if (status === 200 && body.change) return { ok: true, change: body.change };
+  const problem = (message) => ({ problems: [{ field: '_item', message }] });
+  if (status === 409 && body.error === 'stale') {
+    const current = body.current?.lists?.[entry.decl.name];
+    if (current) entry.items = current;
+    return problem(`Someone else changed this ${entry.decl.singular} or the list after you opened the page. Reload the page to see the newest version, then try again.`);
+  }
+  if (status === 422 && Array.isArray(body.problems)) return { problems: body.problems.map((p) => ({ field: p.field, message: p.message })) };
+  if (status === 403 || status === 0) return problem('You’re signed out. Open this site’s /admin in a new tab, sign in, then come back and try again.');
+  if (status === -1) return problem('Couldn’t reach the site. Check your connection and try again.');
+  return problem(body.message ?? 'Couldn’t save just now. Try again in a minute.');
+}
+
+/** Puts a saved change into what this page knows and shows, once it is live. */
+function applyLive(entry, ops) {
+  for (const o of ops) {
+    if (o.list !== entry.decl.name) continue;
+    if (o.op === 'addItem') {
+      const at = o.after === null ? 0 : entry.items.findIndex((i) => i.id === o.after) + 1;
+      entry.items.splice(at, 0, { id: o.id, values: o.values });
+    } else if (o.op === 'editItem') {
+      const item = entry.items.find((i) => i.id === o.id);
+      const old = item ? titleOf(entry.decl, item.values) : '';
+      if (item) item.values = o.values;
+      const el = item && elementOf(entry, o.id);
+      if (el) entry.retitled = retitle(el, old, titleOf(entry.decl, o.values));
+    } else if (o.op === 'removeItem') {
+      elementOf(entry, o.id)?.remove();
+      entry.items = entry.items.filter((i) => i.id !== o.id);
+    } else if (o.op === 'moveItem') {
+      const el = elementOf(entry, o.id);
+      const at = entry.items.findIndex((i) => i.id === o.id);
+      if (at < 0) continue;
+      const [item] = entry.items.splice(at, 1);
+      entry.items.splice(o.after === null ? 0 : entry.items.findIndex((i) => i.id === o.after) + 1, 0, item);
+      const anchor = o.after === null ? null : elementOf(entry, o.after);
+      if (el && anchor) anchor.after(el);
+      else if (el && o.after === null) itemElements(entry).find((other) => other !== el)?.before(el);
+    }
+  }
+}
+
+/** Shows a new title where the old one is, when the item is plain text there. Gives whether it did. */
+function retitle(el, before, after) {
+  const node = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.nodeValue.trim() === before);
+  if (!node) return false;
+  node.nodeValue = node.nodeValue.replace(before, after);
+  return true;
+}
+
+/** An element for a newly added item, when the list's items are plain text; otherwise null. */
+function newItemElement(entry, id, title) {
+  const last = itemElements(entry).at(-1);
+  if (!last) return null;
+  const copy = last.cloneNode(true);
+  copy.querySelectorAll('[data-editor-ui]').forEach((n) => n.remove());
+  if (copy.children.length > 0 || copy.textContent.trim() === '') return null;
+  copy.setAttribute('data-item', id);
+  copy.textContent = title;
+  return copy;
+}
+
+function toolButton(action, label, title) {
+  return make('button', { type: 'button', 'data-action': action, 'aria-label': `${label} ${title}` }, [label]);
+}
+
+/** Draws each item's tools (edit, remove, move) from what the list holds now. */
+function drawTools(entry, focus) {
+  const byHand = entry.decl.sort === 'hand';
+  const els = itemElements(entry);
+  els.forEach((el, index) => {
+    const id = el.getAttribute('data-item');
+    const item = entry.items.find((i) => i.id === id);
+    const title = titleOf(entry.decl, item.values);
+    el.querySelector(':scope > [data-editor-tools]')?.remove();
+    const tools = make('span', { class: 'wd-item-tools', 'data-editor-ui': '', 'data-editor-tools': '' });
+    if (removing?.list === entry.decl.name && removing.id === id) {
+      tools.append(
+        make('span', { class: 'wd-item-tools__ask' }, [`Remove “${title}” from the site?`]),
+        make('button', { type: 'button', 'data-action': 'confirm-remove' }, ['yes, remove']),
+        make('button', { type: 'button', 'data-action': 'keep' }, ['keep it']),
+      );
+    } else {
+      const up = toolButton('up', 'move up', title);
+      const down = toolButton('down', 'move down', title);
+      if (index === 0) up.disabled = true;
+      if (index === els.length - 1) down.disabled = true;
+      tools.append(toolButton('edit', 'edit', title), toolButton('remove', 'remove', title), ...(byHand ? [up, down] : []));
+    }
+    tools.addEventListener('click', (event) => onTool(event, entry, id));
+    el.append(tools);
+  });
+  const full = entry.items.length >= entry.decl.maxItems;
+  entry.add.disabled = full || formOpen;
+  entry.add.title = full ? `This list is full: it holds at most ${entry.decl.maxItems} ${entry.decl.label}. Remove one to add another.` : '';
+  if (focus) {
+    const scope = focus.id ? elementOf(entry, focus.id) : null;
+    const target = scope?.querySelector(`[data-action="${focus.action}"]:not(:disabled)`) ?? scope?.querySelector('button:not(:disabled)') ?? entry.add;
+    target.focus();
+  }
+}
+
+function markWaiting(entry, ops) {
+  for (const o of ops) {
+    const el = o.id ? elementOf(entry, o.id) : null;
+    if (el) el.dataset.editorState = 'waiting';
+  }
+}
+
+/** What staff are told once a list change is accepted. */
+function savedLine(done, extra = '') {
+  say(review ? `${done} It will appear on the site once an admin approves it.` : `${done} It’s on the site now.${extra}`, 'saved');
+}
+
+/** Sends a change from an item's tools, then updates the page. */
+async function runOps(entry, ops, done, focus) {
+  say('Saving…');
+  const result = await sendOps(entry, ops);
+  removing = null;
+  if (!result.ok) {
+    say(result.problems.map((p) => p.message).join(' '), 'problem');
+    return drawTools(entry, focus);
+  }
+  if (review) markWaiting(entry, ops);
+  else applyLive(entry, result.change.ops);
+  drawTools(entry, focus);
+  savedLine(done);
+}
+
+function onTool(event, entry, id) {
+  const button = event.target instanceof Element ? event.target.closest('button[data-action]') : null;
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const item = entry.items.find((i) => i.id === id);
+  if (!item) return;
+  const { name } = entry.decl;
+  const title = titleOf(entry.decl, item.values);
+  const action = button.dataset.action;
+  if (action === 'edit') openForm(entry, item);
+  else if (action === 'remove') {
+    removing = { list: name, id };
+    drawTools(entry);
+    elementOf(entry, id)?.querySelector('[data-action="keep"]')?.focus();
+  } else if (action === 'keep') {
+    removing = null;
+    drawTools(entry, { id, action: 'remove' });
+  } else if (action === 'confirm-remove') {
+    // The item is gone, so focus goes to the add button.
+    runOps(entry, [{ op: 'removeItem', list: name, id, seen: item.values }], `Removed “${title}”.`, { id: null });
+  } else if (action === 'up' || action === 'down') {
+    const shown = ordered(entry);
+    const index = shown.findIndex((i) => i.id === id);
+    const seen = index === 0 ? null : shown[index - 1].id;
+    // Up goes after the item two places up; down goes after the item below.
+    const after = action === 'up' ? (index < 2 ? null : shown[index - 2].id) : shown[index + 1]?.id;
+    if (after === undefined) return;
+    runOps(entry, [{ op: 'moveItem', list: name, id, after, seen }], `Moved “${title}” ${action}.`, { id, action });
+  }
+}
+
+// The item form opens in a dialog over the page, so it works whatever the page's markup is.
+let formModule = null;
+async function openForm(entry, item) {
+  if (formOpen) return;
+  formOpen = true;
+  const { decl } = entry;
+  let module;
+  try {
+    formModule ??= import('/admin/item-form.js');
+    module = await formModule;
+  } catch {
+    formModule = null;
+    formOpen = false;
+    return say('Couldn’t open the form. Check your connection and try again.', 'problem');
+  }
+  const dialog = make('dialog', { class: 'wd-editor__dialog', 'data-editor-ui': '', 'aria-label': item ? `Edit ${titleOf(decl, item.values)}` : `Add ${decl.singular}` });
+  const close = (focus) => {
+    if (!formOpen) return;
+    formOpen = false;
+    dialog.close();
+    dialog.remove();
+    drawTools(entry, focus);
+  };
+  const form = module.createItemForm({
+    list: decl,
+    item,
+    onCancel: () => close(item ? { id: item.id, action: 'edit' } : { id: null }),
+    async onSubmit(values) {
+      const id = item ? item.id : newId();
+      const ops = item
+        ? [{ op: 'editItem', list: decl.name, id, values, seen: item.values }]
+        : [{ op: 'addItem', list: decl.name, id, values, after: entry.items.length > 0 ? entry.items[entry.items.length - 1].id : null }];
+      const result = await sendOps(entry, ops);
+      if (!result.ok) return result;
+      const saved = result.change.ops[0];
+      const title = titleOf(decl, saved.values);
+      let extra = '';
+      if (review) {
+        if (item) markWaiting(entry, ops);
+      } else {
+        entry.retitled = false;
+        applyLive(entry, result.change.ops);
+        if (!item) {
+          const copy = newItemElement(entry, id, title);
+          const previous = itemElements(entry).at(-1);
+          if (copy && previous) previous.after(copy);
+          else extra = ' Reload the page to see it here.';
+        } else if (!entry.retitled) extra = ' Reload the page to see how it looks.';
+      }
+      close(item ? { id, action: 'edit' } : { id: review ? null : id, action: 'edit' });
+      savedLine(`${item ? 'Changed' : 'Added'} “${title}”.`, extra);
+    },
+  });
+  dialog.append(form.element);
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    close(item ? { id: item.id, action: 'edit' } : { id: null });
+  });
+  document.body.append(dialog);
+  drawTools(entry);
+  dialog.showModal();
+  form.focus();
+}
+
+// A list on the page gets a link to its own page (for fields the page does not show),
+// an add button, and edit, remove and move on each item.
+const listNames = new Map((settings.lists ?? []).map((l) => [l.name, l]));
+for (const el of document.querySelectorAll('[data-list]')) {
+  const decl = listNames.get(el.getAttribute('data-list') ?? '');
+  if (!decl || lists.has(decl.name)) continue;
+  const link = make('a', { class: 'wd-editor__list-link', href: `/admin/lists/${encodeURIComponent(decl.name)}` }, ['Edit this list']);
+  link.setAttribute('aria-label', `Edit this list: ${decl.label}`);
+  el.insertAdjacentElement('afterend', link);
+  const add = make('button', { type: 'button', class: 'wd-editor__add', 'data-editor-ui': '' }, [`add ${decl.singular}`]);
+  link.insertAdjacentElement('afterend', add);
+  const entry = { decl, items: decl.items ?? [], el, add };
+  lists.set(decl.name, entry);
+  add.addEventListener('click', (event) => {
+    event.preventDefault();
+    openForm(entry, null);
+  });
+  drawTools(entry);
+}
+
 // --- start -----------------------------------------------------------------
 
 for (const el of document.querySelectorAll('[data-copy]:not(meta)')) {
@@ -476,15 +759,6 @@ for (const el of document.querySelectorAll('[data-copy]:not(meta)')) {
   shown.set(key, text);
   el.tabIndex = 0;
   el.setAttribute('aria-describedby', hint.id);
-}
-// A list on the page gets a link to its own page, where items are added, changed, removed and moved.
-const listNames = new Map((settings.lists ?? []).map((l) => [l.name, l]));
-for (const el of document.querySelectorAll('[data-list]')) {
-  const found = listNames.get(el.getAttribute('data-list') ?? '');
-  if (!found) continue;
-  const link = make('a', { class: 'wd-editor__list-link', href: `/admin/lists/${encodeURIComponent(found.name)}` }, ['Edit this list']);
-  link.setAttribute('aria-label', `Edit this list: ${found.label}`);
-  el.insertAdjacentElement('afterend', link);
 }
 document.body.append(bar);
 document.documentElement.dataset.editor = 'on';

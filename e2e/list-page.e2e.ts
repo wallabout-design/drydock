@@ -199,6 +199,7 @@ test.describe('move', () => {
     expect(await ids(page)).toEqual(['attic', 'porch', 'blue']);
 
     await page.getByRole('button', { name: 'move up Porch' }).click();
+    await expect(titles(page)).toHaveText(['Porch', 'Attic', 'Blue room']);
     expect(await ids(page)).toEqual(['porch', 'attic', 'blue']);
     // Now first: the up button is off, so focus lands on another button of the row.
     await expect(page.locator('[data-item="porch"] button:focus')).toHaveCount(1);
