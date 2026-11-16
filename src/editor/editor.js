@@ -237,6 +237,20 @@ function stopEditing(el, { cancel = false } = {}) {
   } else record(key);
 }
 
+// The path (and query) a link goes to when it is a page of this site outside /admin, else null.
+function pageToEdit(link) {
+  let url;
+  try {
+    url = new URL(link.getAttribute('href') ?? '', location.href);
+  } catch {
+    return null;
+  }
+  if (url.origin !== location.origin || url.pathname === '/admin' || url.pathname.startsWith('/admin/')) return null;
+  // A link that stays on this page (an anchor, or the page itself) goes nowhere new.
+  if (url.pathname + url.search === settings.page) return null;
+  return url.pathname + url.search;
+}
+
 const marked = (target) => (target instanceof Element ? target.closest('[data-copy]:not(meta)') : null);
 
 document.addEventListener(
@@ -249,6 +263,13 @@ document.addEventListener(
     const link = event.target.closest('a[href], button, input, select, summary');
     const el = marked(event.target);
     if (link || el) event.preventDefault();
+    // A link to another page of this site opens that page in the editor, unless its words are
+    // themselves editable (then the click starts editing). Unsaved changes are asked about by
+    // the beforeunload warning.
+    if (!el && link instanceof HTMLAnchorElement) {
+      const to = pageToEdit(link);
+      if (to) location.assign(`/admin/edit?page=${encodeURIComponent(to)}`);
+    }
     if (el) {
       event.stopPropagation();
       startEditing(el);
