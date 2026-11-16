@@ -25,8 +25,11 @@ body[data-editor-page] {
   z-index: 1;
 }
 [data-copy]:not(meta) {
-  outline: 1px dashed var(--wd-editor-line);
+  /* A blue dashed outline with a light halo outside it, so it shows on white,
+     dark and photo backgrounds alike. */
+  outline: 2px dashed var(--wd-editor-mark);
   outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgb(255 255 255 / 0.6);
   cursor: text;
 }
 [data-copy]:not(meta):hover,
