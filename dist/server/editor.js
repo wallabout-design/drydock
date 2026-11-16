@@ -242,7 +242,17 @@ export function createEditor(options) {
             check: '/admin/api/check',
             changesPage: '/admin/changes',
             texts: [...content.texts.values()].map(({ key, max, label }) => ({ key, max, label, current: state.texts[key] ?? null })),
-            lists: [...content.lists.values()].map(({ name, label, singular }) => ({ name, label, singular })),
+            // The whole declaration and the items in order: the page opens the item form from them.
+            lists: [...content.lists.values()].map((l) => ({
+                name: l.name,
+                label: l.label,
+                singular: l.singular,
+                titleField: l.titleField,
+                fields: l.fields,
+                sort: l.sort,
+                maxItems: l.maxItems,
+                items: orderItems(content, l.name, state.lists[l.name] ?? []),
+            })),
         };
         // JSON in a data block: not run as script, and "<" is escaped so nothing in it can close the tag.
         const data = JSON.stringify(settings).replace(/</g, '\\u003c');

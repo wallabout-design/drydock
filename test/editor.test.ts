@@ -112,6 +112,19 @@ describe('as an editor in auto mode', () => {
     const settings = JSON.parse(/id="editor-settings">(.*?)<\/script>/.exec(html)![1]!);
     expect(settings).toMatchObject({ editor: 'ed@example.com', role: 'editor', mode: 'auto', page: '/' });
     expect(settings.texts).toEqual([{ key: 'home.title', max: 20, label: 'Home title', current: 'Hello' }]);
+    // The lists carry what the item form needs, and the items in order.
+    expect(settings.lists).toEqual([
+      {
+        name: 'rooms',
+        label: 'rooms',
+        singular: 'room',
+        titleField: 'title',
+        fields: [{ name: 'title', label: 'Title', type: 'text', required: true }],
+        sort: 'hand',
+        maxItems: 3,
+        items: [{ id: 'a', values: { title: 'Blue' } }],
+      },
+    ]);
   });
 
   it('refuses pages that are not the site’s own public pages', async () => {

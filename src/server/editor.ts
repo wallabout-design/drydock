@@ -7,7 +7,7 @@
 //   GET  /admin/edit?page=/about              that public page, with the editor added
 //   GET  /admin/editor.js, /admin/editor.css  the editor's own script and styles
 //   GET  /admin/lists/<name>                  the items of a list, with add, edit, remove and move
-//   GET  /admin/item-form.js, /admin/list-page.js  the list page's scripts (the form is its own module)
+//   GET  /admin/item-form.js, /admin/list-page.js  the list page's scripts (the form is its own module, which the edit view opens too)
 //   GET  /admin/changes                       waiting, recent and undone changes, as plain HTML
 //   POST /admin/api/changes                   { ops: Operation[] } submits a change
 //   POST /admin/api/check                     { key, text } says whether a text would be accepted
@@ -279,7 +279,17 @@ export function createEditor(options: EditorOptions): Editor {
       check: '/admin/api/check',
       changesPage: '/admin/changes',
       texts: [...content.texts.values()].map(({ key, max, label }) => ({ key, max, label, current: state.texts[key] ?? null })),
-      lists: [...content.lists.values()].map(({ name, label, singular }) => ({ name, label, singular })),
+      // The whole declaration and the items in order: the page opens the item form from them.
+      lists: [...content.lists.values()].map((l) => ({
+        name: l.name,
+        label: l.label,
+        singular: l.singular,
+        titleField: l.titleField,
+        fields: l.fields,
+        sort: l.sort,
+        maxItems: l.maxItems,
+        items: orderItems(content, l.name, state.lists[l.name] ?? []),
+      })),
     };
     // JSON in a data block: not run as script, and "<" is escaped so nothing in it can close the tag.
     const data = JSON.stringify(settings).replace(/</g, '\\u003c');
