@@ -32,6 +32,41 @@ const bar = (page: Page) => page.getByRole('complementary', { name: 'text editor
 const status = (page: Page) => bar(page).getByRole('status');
 const save = (page: Page) => bar(page).locator('.wd-editor__save');
 
+test.describe('editable texts are marked', () => {
+  test('the resting mark shows on light and dark backgrounds, and the bar counts the texts', async ({ page }) => {
+    await open(page);
+    await expect(bar(page)).toContainText('3 texts on this page can be edited');
+    const ratios = await page.evaluate((selector) => {
+      const lum = (c: number[]) => {
+        const [r, g, b] = c.map((v) => {
+          const x = v / 255;
+          return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (a: number[], b: number[]) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+      const rgb = (v: string) => (v.match(/[\d.]+/g) ?? []).map(Number);
+      const el = document.querySelector(selector) as HTMLElement;
+      const style = getComputedStyle(el);
+      const mark = rgb(style.outlineColor).slice(0, 3);
+      const halo = rgb(style.boxShadow.match(/rgba?\([^)]*\)/)?.[0] ?? '');
+      const out: Record<string, number> = { width: parseFloat(style.outlineWidth) };
+      for (const [name, bg] of [['white', [255, 255, 255]], ['dark', [10, 10, 10]]] as [string, number[]][]) {
+        const a = halo[3] ?? 1;
+        const around = bg.map((v, i) => halo[i] * a + v * (1 - a));
+        out[name] = Math.max(ratio(mark, bg), ratio(mark, around));
+      }
+      return out;
+    }, TITLE);
+    expect(ratios.width).toBeGreaterThanOrEqual(2);
+    expect(ratios.white).toBeGreaterThanOrEqual(3);
+    expect(ratios.dark).toBeGreaterThanOrEqual(3);
+  });
+});
+
 test.describe('changes go live on their own', () => {
   test('edit a text, save it, undo the save', async ({ page }) => {
     await open(page);
