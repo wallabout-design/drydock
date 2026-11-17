@@ -29,6 +29,7 @@
     },
     "./astro/Text.astro": "./dist/astro/Text.astro",
     "./astro/List.astro": "./dist/astro/List.astro",
+    "./astro/Image.astro": "./dist/astro/Image.astro",
     "./editor.js": "./dist/editor.js",
     "./editor.css": "./dist/editor.css",
     "./item-form.js": "./dist/item-form.js"
