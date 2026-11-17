@@ -120,14 +120,75 @@ function checkChoice(field, raw) {
         ? { value: raw }
         : { problem: problem(field.name, 'format', `Please choose one of the options for ${field.label}.`) };
 }
+const UPLOAD_KEY = /^\d{4}\/(0[1-9]|1[0-2])\/[A-Za-z0-9_-]{22,32}$/;
+const isWhole = (n, max) => Number.isInteger(n) && n >= 1 && n <= max;
+/** The `a:b` of an aspect setting as one number, width over height. */
+function aspectRatio(aspect) {
+    const [a, b] = aspect.split(':').map(Number);
+    return a / b;
+}
+function checkUpload(content, list, field, raw) {
+    const broken = problem(field.name, 'format', `${field.label} could not be read. Please choose the image again.`);
+    const { key, width, height, crop } = raw;
+    const max = LIMITS.image.original;
+    if (typeof key !== 'string' || !UPLOAD_KEY.test(key) || !isWhole(width, max) || !isWhole(height, max))
+        return { problem: broken };
+    let kept;
+    if (crop !== undefined) {
+        const c = crop;
+        if (typeof c !== 'object' || c === null || Array.isArray(c))
+            return { problem: broken };
+        const { x, y, w, h } = c;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !isWhole(w, max) || !isWhole(h, max))
+            return { problem: broken };
+        if (x < 0 || y < 0 || x + w > width || y + h > height) {
+            return { problem: problem(field.name, 'range', `The part of ${field.label.toLowerCase()} you chose reaches outside the image. Please choose it again.`) };
+        }
+        if (field.aspect !== undefined) {
+            const wanted = aspectRatio(field.aspect);
+            if (Math.abs(w / h - wanted) / wanted > 0.01) {
+                return { problem: problem(field.name, 'range', `The part of ${field.label.toLowerCase()} you chose is the wrong shape (it should be ${field.aspect}). Please choose it again.`) };
+            }
+        }
+        kept = { x: x, y: y, w, h };
+    }
+    else if (field.aspect !== undefined) {
+        return { problem: problem(field.name, 'empty', `Please choose the part of ${field.label.toLowerCase()} to show (${field.aspect}).`) };
+    }
+    const shape = kept === undefined ? {} : { crop: kept };
+    if (field.decorative)
+        return { value: { key, alt: '', width, height, ...shape } };
+    const alt = checkAlt(content, list, field, raw.alt);
+    if ('problem' in alt)
+        return alt;
+    return { value: { key, alt: alt.value, width, height, ...shape } };
+}
+function checkAlt(content, list, field, rawAlt) {
+    const altName = `${field.name}.alt`;
+    const altLabel = `The description of ${field.label.toLowerCase()}`;
+    if (rawAlt !== undefined && typeof rawAlt !== 'string')
+        return { problem: problem(altName, 'type', `${altLabel} must be text.`) };
+    const alt = checkWords(content, list, { name: field.name, label: field.label, type: 'text', maxLength: LIMITS.alt }, rawAlt ?? '', altLabel, altName);
+    if ('problem' in alt)
+        return alt;
+    if ('empty' in alt)
+        return { problem: problem(altName, 'empty', `${altLabel} is needed, for people who can’t see the image.`) };
+    return { value: alt.value };
+}
 function checkImage(content, list, field, raw) {
     const message = `${field.label} must be an https web address or a path on the site starting with /.`;
-    const isEmpty = raw === undefined || raw === null || raw === '' || (typeof raw === 'object' && raw.src === '' && !raw.alt);
+    const isEmpty = raw === undefined || raw === null || raw === '' || (typeof raw === 'object' && raw.src === '' && !raw.alt && raw.key === undefined);
     if (isEmpty)
         return { empty: true };
     if (typeof raw !== 'object' || Array.isArray(raw))
         return { problem: problem(field.name, 'type', message) };
-    const { src: rawSrc, alt: rawAlt } = raw;
+    const given = raw;
+    if (given.key !== undefined && given.src !== undefined) {
+        return { problem: problem(field.name, 'format', `${field.label} can’t be both an uploaded image and a web address. Please choose one.`) };
+    }
+    if (given.key !== undefined)
+        return checkUpload(content, list, field, given);
+    const { src: rawSrc, alt: rawAlt } = given;
     if (typeof rawSrc !== 'string' || (rawAlt !== undefined && typeof rawAlt !== 'string')) {
         return { problem: problem(field.name, 'type', message) };
     }
@@ -155,13 +216,9 @@ function checkImage(content, list, field, raw) {
     }
     if (field.decorative)
         return { value: { src, alt: '' } };
-    const altName = `${field.name}.alt`;
-    const altLabel = `The description of ${field.label.toLowerCase()}`;
-    const alt = checkWords(content, list, { name: field.name, label: field.label, type: 'text', maxLength: LIMITS.alt }, rawAlt ?? '', altLabel, altName);
+    const alt = checkAlt(content, list, field, rawAlt);
     if ('problem' in alt)
         return alt;
-    if ('empty' in alt)
-        return { problem: problem(altName, 'empty', `${altLabel} is needed, for people who can’t see the image.`) };
     return { value: { src, alt: alt.value } };
 }
 function checkField(content, list, field, raw) {

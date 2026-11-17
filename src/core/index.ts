@@ -1,4 +1,5 @@
 export { DeclarationError, defineContent, type Content } from './declare.js';
+export { imageSources, type ImageSourcesOptions, type UploadSources } from './image.js';
 export { LIMITS } from './limits.js';
 export { cleanLine, cleanLines, lengthOf } from './clean.js';
 export type * from './types.js';

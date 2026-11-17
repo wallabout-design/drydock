@@ -139,7 +139,8 @@ export function assignPositions(order, previous) {
 }
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 function plainValue(value) {
-    return typeof value === 'object' ? { src: value.src, alt: value.alt } : value;
+    // An image value was cleaned by the check: keep exactly what it holds.
+    return typeof value === 'object' ? { ...value } : value;
 }
 /**
  * The files for a state. `previous` holds the positions the files had, so items

@@ -50,6 +50,8 @@ function checkField(list, field, errors) {
         if (!ok)
             errors.push(`${where}: schemes must be a list of names like "https" or "mailto"`);
     }
+    if (field.type === 'image')
+        checkImageField(where, field, errors);
     if (field.type === 'choice') {
         const options = field.options;
         if (!Array.isArray(options) || options.length === 0) {
@@ -67,6 +69,34 @@ function checkField(list, field, errors) {
                     seen.add(option.value);
             }
         }
+    }
+}
+function checkImageField(where, field, errors) {
+    const { minWidth: lo, maxWidth: hi, widthsMax, defaultWidths, sizes: sizesMax, original } = LIMITS.image;
+    const { aspect, widths, sizes, full, minWidth } = field;
+    if (aspect !== undefined && !(typeof aspect === 'string' && /^[1-9]\d{0,2}:[1-9]\d{0,2}$/.test(aspect))) {
+        errors.push(`${where}: aspect must be two whole numbers with a colon, like "1:1" or "16:10"`);
+    }
+    if (widths !== undefined) {
+        if (!Array.isArray(widths) || widths.length < 1 || widths.length > widthsMax || !widths.every((w) => isCount(w, hi) && w >= lo)) {
+            errors.push(`${where}: widths must be 1 to ${widthsMax} whole numbers from ${lo} to ${hi}`);
+        }
+        else if (widths.some((w, i) => i > 0 && w <= widths[i - 1])) {
+            errors.push(`${where}: widths must go from the narrowest to the widest, with none repeated`);
+        }
+    }
+    if (sizes !== undefined && (typeof sizes !== 'string' || sizes.trim() === '' || sizes.length > sizesMax)) {
+        errors.push(`${where}: sizes must be text of 1 to ${sizesMax} characters, like "(min-width: 800px) 400px, 100vw"`);
+    }
+    if (full !== undefined) {
+        const widest = Array.isArray(widths) && widths.length > 0 && widths.every((w) => typeof w === 'number') ? Math.max(...widths) : Math.max(...defaultWidths);
+        if (!isCount(full, hi) || full < lo)
+            errors.push(`${where}: full must be a whole number from ${lo} to ${hi}`);
+        else if (full <= widest)
+            errors.push(`${where}: full must be wider than the widest of widths (${widest})`);
+    }
+    if (minWidth !== undefined && !isCount(minWidth, original)) {
+        errors.push(`${where}: minWidth must be a whole number from 1 to ${original}`);
     }
 }
 function checkList(list, errors) {
