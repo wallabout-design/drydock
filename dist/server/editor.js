@@ -1,6 +1,6 @@
 import { can, identify } from './access.js';
 import { orderItems } from '../core/read.js';
-import { createUploadRoutes, uploadsNotSetUp } from './uploads.js';
+import { createUploadRoutes, MAX_UPLOAD_BYTES, uploadsNotSetUp } from './uploads.js';
 import { EDITOR_CSS, EDITOR_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
 export const MAX_BODY_BYTES = 64 * 1024;
 const NO_STORE = { 'cache-control': 'no-store' };
@@ -77,6 +77,8 @@ function describeOp(content, o) {
 export function createEditor(options) {
     const { content, store, mode, site } = options;
     const uploads = options.uploads ? createUploadRoutes(content, options.uploads, json) : null;
+    /** What the item form needs to offer a file picker: absent when the site has no `uploads`. */
+    const uploadsSettings = uploads ? { api: '/admin/api/uploads', maxBytes: MAX_UPLOAD_BYTES } : undefined;
     const ownOrigin = (request) => site.origin ?? new URL(request.url).origin;
     /** Who may undo: anyone who may edit when changes go live on their own, only admins when an admin reviews them. */
     const undoAction = mode === 'auto' ? 'edit' : 'approve';
@@ -231,6 +233,30 @@ export function createEditor(options) {
         }
         return uploads.rendition(parsed);
     }
+    /** The sizes saving an upload will ask for (the form can't work them out itself: they depend on the crop). */
+    async function uploadSizes(request) {
+        if (request.method !== 'POST')
+            return wrongMethod('POST');
+        const gate = writeGate(request, true);
+        if (gate)
+            return gate;
+        const body = await readBody(request);
+        if (body instanceof Response)
+            return body;
+        let parsed;
+        try {
+            parsed = JSON.parse(body.text);
+        }
+        catch {
+            parsed = null;
+        }
+        return uploads.sizes(parsed);
+    }
+    async function uploadOriginal(request) {
+        if (request.method !== 'GET')
+            return wrongMethod('GET');
+        return uploads.original(new URL(request.url).searchParams);
+    }
     function originGate(request) {
         if (request.headers.get('origin') !== ownOrigin(request)) {
             return json(403, { error: 'cross-site', message: 'This can only be sent from the site’s own editor.' });
@@ -290,6 +316,7 @@ export function createEditor(options) {
             api: '/admin/api/changes',
             check: '/admin/api/check',
             changesPage: '/admin/changes',
+            uploads: uploadsSettings,
             texts: [...content.texts.values()].map(({ key, max, label }) => ({ key, max, label, current: state.texts[key] ?? null })),
             // The whole declaration and the items in order: the page opens the item form from them.
             lists: [...content.lists.values()].map((l) => ({
@@ -331,6 +358,7 @@ export function createEditor(options) {
             api: '/admin/api/changes',
             check: '/admin/api/check',
             changesPage: '/admin/changes',
+            uploads: uploadsSettings,
             list: {
                 name: list.name,
                 label: list.label,
@@ -356,7 +384,7 @@ export function createEditor(options) {
             headers: {
                 ...NO_STORE,
                 'content-type': 'text/html; charset=utf-8',
-                'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+                'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; form-action 'none'",
                 'x-robots-tag': 'noindex, nofollow',
             },
         });
@@ -431,6 +459,10 @@ export function createEditor(options) {
                 return can(identity, 'edit') ? upload(request) : forbidden();
             if (uploads && pathname === '/admin/api/uploads/renditions')
                 return can(identity, 'edit') ? rendition(request) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads/sizes')
+                return can(identity, 'edit') ? uploadSizes(request) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads/original')
+                return can(identity, 'edit') ? uploadOriginal(request) : forbidden();
             if (pathname === '/admin/api/changes')
                 return can(identity, 'edit') ? submit(request, identity) : forbidden();
             const decision = /^\/admin\/api\/changes\/([^/]+)\/(approve|reject|undo)$/.exec(pathname);
