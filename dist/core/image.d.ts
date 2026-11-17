@@ -29,3 +29,37 @@ export declare function imageSources(field: ImageField, value: ImageUpload, opti
 export declare function imageSources(field: ImageField, value: ImageValue, options?: ImageSourcesOptions): {
     src: string;
 } | UploadSources;
+/** The options for the markup of an image. */
+export interface ImageMarkupOptions extends ImageSourcesOptions {
+    /** A second image shown in dark mode. Its own alt text is not used: the light image's alt text describes both. */
+    dark?: ImageValue;
+}
+/** The attributes of an image's `<img>`, and the `<source>` for dark mode when there is one. */
+export interface ImageMarkup {
+    img: {
+        src: string;
+        alt: string;
+        srcset?: string;
+        sizes?: string;
+        width?: number;
+        height?: number;
+    };
+    dark?: {
+        media: string;
+        srcset: string;
+        sizes?: string;
+    };
+}
+/**
+ * The attributes for an image, as plain values: the framework helpers set them
+ * as attributes, so every address and alt text is escaped by the framework.
+ * A decorative field gets `alt=""`. An address value gets only `src` and `alt`.
+ */
+export declare function imageMarkup(field: ImageField, value: ImageValue, options?: ImageMarkupOptions): ImageMarkup;
+/** The media query for a dark colour scheme. It follows the device setting only. */
+export declare const DARK_MEDIA = "(prefers-color-scheme: dark)";
+/**
+ * The address to link a lightbox to: an uploaded image's `full` address when
+ * the field has one, otherwise its widest address; an address value's `src`.
+ */
+export declare function fullSrc(field: ImageField, value: ImageValue, options?: ImageSourcesOptions): string;

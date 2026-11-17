@@ -1,5 +1,8 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DeclarationError, defineContent, imageSources, type Field, type ImageField, type ImageUpload } from '../src/index.js';
+import { DeclarationError, defineContent, fullSrc, imageMarkup, imageSources, type Field, type ImageField, type ImageUpload, type ImageValue } from '../src/index.js';
+import { Image } from '../src/react/index.js';
 
 const title: Field = { name: 'title', label: 'Title', type: 'text', required: true };
 const declare = (image: Record<string, unknown>) =>
@@ -136,5 +139,81 @@ describe('imageSources', () => {
     expect(imageSources(f, value({ width: 400, height: 200 })).full).toBeUndefined();
     expect(imageSources(f, value({ width: 300, height: 150 })).full).toBeUndefined();
     expect(imageSources(field({ widths: [400] }), value()).full).toBeUndefined();
+  });
+});
+
+describe('imageMarkup', () => {
+  const field = (over: Partial<ImageField> = {}): ImageField => ({ name: 'pic', label: 'Picture', type: 'image', ...over });
+  const upload = (over: Partial<ImageUpload> = {}): ImageUpload => ({ key: KEY, alt: 'A "quoted" <b>shot</b> & more', width: 1200, height: 600, ...over });
+  const dark = (over: Partial<ImageUpload> = {}): ImageValue => ({ key: '2026/11/zyxwvutsrqponmlkjihgfed', alt: 'dark', width: 1200, height: 600, ...over });
+
+  it('gives an upload its srcset, sizes and shape, with the alt text as given', () => {
+    expect(imageMarkup(field(), upload())).toEqual({
+      img: {
+        src: `/media/${KEY}/whole/960.webp`,
+        srcset: `/media/${KEY}/whole/480.webp 480w, /media/${KEY}/whole/960.webp 960w, /media/${KEY}/whole/1200.webp 1200w`,
+        sizes: '100vw',
+        width: 1200,
+        height: 600,
+        alt: 'A "quoted" <b>shot</b> & more',
+      },
+    });
+  });
+  it('gives an address value only src and alt', () => {
+    expect(imageMarkup(field(), { src: 'https://example.com/a.jpg', alt: 'Plain' })).toEqual({ img: { src: 'https://example.com/a.jpg', alt: 'Plain' } });
+  });
+  it('gives alt="" for a decorative field, whatever the value holds', () => {
+    expect(imageMarkup(field({ decorative: true }), upload()).img.alt).toBe('');
+    expect(imageMarkup(field({ decorative: true }), { src: '/a.jpg', alt: 'x' }).img.alt).toBe('');
+  });
+  it('adds a dark source with its own srcset and sizes, and keeps the light image', () => {
+    const m = imageMarkup(field({ sizes: '50vw', widths: [400] }), upload({ width: 400, height: 200 }), { dark: dark({ width: 400, height: 200 }) });
+    expect(m.dark).toEqual({ media: '(prefers-color-scheme: dark)', srcset: '/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w', sizes: '50vw' });
+    expect(m.img.src).toBe(`/media/${KEY}/whole/400.webp`);
+  });
+  it('gives a dark address value a plain srcset of its src', () => {
+    expect(imageMarkup(field(), upload(), { dark: { src: '/dark.jpg', alt: 'x' } }).dark).toEqual({ media: '(prefers-color-scheme: dark)', srcset: '/dark.jpg' });
+  });
+  it('uses the prefix for every address', () => {
+    const m = imageMarkup(field({ widths: [400] }), upload({ width: 400, height: 200 }), { prefix: 'https://cdn.example.com/m/', dark: dark({ width: 400, height: 200 }) });
+    expect(m.img.src).toBe(`https://cdn.example.com/m/${KEY}/whole/400.webp`);
+    expect(m.dark?.srcset).toBe('https://cdn.example.com/m/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w');
+  });
+});
+
+describe('fullSrc', () => {
+  const field = (over: Partial<ImageField> = {}): ImageField => ({ name: 'pic', label: 'Picture', type: 'image', ...over });
+  const upload = (over: Partial<ImageUpload> = {}): ImageUpload => ({ key: KEY, alt: 'x', width: 3000, height: 1500, ...over });
+
+  it('gives an address value its src', () => {
+    expect(fullSrc(field({ full: 2000 }), { src: '/a.jpg', alt: 'x' })).toBe('/a.jpg');
+  });
+  it('gives the full address when the field has one and the image is wider', () => {
+    expect(fullSrc(field({ widths: [400], full: 1760 }), upload())).toBe(`/media/${KEY}/whole/1760.webp`);
+  });
+  it('otherwise gives the widest address in the srcset', () => {
+    expect(fullSrc(field(), upload())).toBe(`/media/${KEY}/whole/1600.webp`);
+    expect(fullSrc(field({ widths: [400], full: 1760 }), upload({ width: 400, height: 200 }))).toBe(`/media/${KEY}/whole/400.webp`);
+  });
+});
+
+describe('the React Image', () => {
+  const field: ImageField = { name: 'pic', label: 'Picture', type: 'image', widths: [400] };
+  const shot = { key: KEY, alt: 'Shot', width: 400, height: 200 };
+
+  it('renders an upload as an img with srcset and sizes', () => {
+    const html = renderToStaticMarkup(createElement(Image, { field, value: shot, className: 'hero', loading: 'lazy' }));
+    expect(html).toBe(`<img src="/media/${KEY}/whole/400.webp" srcSet="/media/${KEY}/whole/400.webp 400w" sizes="100vw" width="400" height="200" alt="Shot" loading="lazy" class="hero"/>`);
+  });
+  it('renders an address as a plain img, and escapes its address and alt', () => {
+    const html = renderToStaticMarkup(createElement(Image, { field, value: { src: '/a.jpg?x="1"&y=2', alt: 'a "b" <c>' } }));
+    // React 19 adds a preload link ahead of a plain image; the img itself is what matters here.
+    expect(html).toContain('<img src="/a.jpg?x=&quot;1&quot;&amp;y=2" alt="a &quot;b&quot; &lt;c&gt;"/>');
+  });
+  it('renders a dark pair as a picture with a dark source before the img', () => {
+    const html = renderToStaticMarkup(createElement(Image, { field: { ...field, decorative: true }, value: shot, dark: { key: '2026/11/zyxwvutsrqponmlkjihgfed', alt: 'd', width: 400, height: 200 } }));
+    expect(html).toBe(
+      `<picture><source media="(prefers-color-scheme: dark)" srcSet="/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w" sizes="100vw"/><img src="/media/${KEY}/whole/400.webp" srcSet="/media/${KEY}/whole/400.webp 400w" sizes="100vw" width="400" height="200" alt=""/></picture>`,
+    );
   });
 });
