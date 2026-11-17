@@ -135,6 +135,14 @@ describe('as an editor in auto mode', () => {
     }
   });
 
+  it('answers 404 to a query without a page, instead of showing the home page', async () => {
+    const { editor } = make('auto');
+    for (const url of ['/admin/edit?page/area', '/admin/edit?pag=/', '/admin/edit?x=1']) {
+      expect([url, (await call(editor, 'editor', 'GET', url))!.status]).toEqual([url, 404]);
+    }
+    expect((await call(editor, 'editor', 'GET', '/admin/edit'))!.status).toBe(200);
+  });
+
   it('serves the editor files', async () => {
     const { editor } = make('auto');
     expect((await call(editor, 'editor', 'GET', '/admin/editor.js'))!.headers.get('content-type')).toContain('javascript');

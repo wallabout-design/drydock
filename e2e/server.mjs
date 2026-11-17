@@ -107,7 +107,7 @@ function reset() {
     keys,
     site: {
       fetchPage: async (path) =>
-        path === '/'
+        path === '/' || path === '/other'
           ? new Response(PAGE, { headers: { 'content-type': 'text/html', 'content-security-policy': "default-src 'self'" } })
           : new Response('not here', { status: 404 }),
     },

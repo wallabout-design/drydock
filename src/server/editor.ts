@@ -256,12 +256,15 @@ export function createEditor(options: EditorOptions): Editor {
 
   async function editPage(request: Request, identity: Identity): Promise<Response> {
     if (request.method !== 'GET' && request.method !== 'HEAD') return wrongMethod('GET, HEAD');
-    const page = new URL(request.url).searchParams.get('page') ?? '/';
+    const query = new URL(request.url).searchParams;
+    const page = query.get('page') ?? '/';
     const gone = (): Response =>
       new Response('That page can’t be edited here.', {
         status: 404,
         headers: { ...NO_STORE, 'content-type': 'text/plain; charset=utf-8' },
       });
+    // A query without a page ("?page/area", a missing "=") is a typo, not a request for the home page.
+    if (!query.has('page') && [...query.keys()].length > 0) return gone();
     // A path on this site only: starts with one "/", and is not the admin itself.
     if (!/^\/(?!\/)[^\\\s]*$/.test(page) || isAdminPath(page.split(/[?#]/)[0] as string)) return gone();
 

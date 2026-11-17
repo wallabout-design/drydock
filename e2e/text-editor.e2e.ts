@@ -32,6 +32,21 @@ const bar = (page: Page) => page.getByRole('complementary', { name: 'text editor
 const status = (page: Page) => bar(page).getByRole('status');
 const save = (page: Page) => bar(page).locator('.wd-editor__save');
 
+test.describe('moving between pages', () => {
+  test('a link to another page opens it in the editor', async ({ page }) => {
+    await open(page);
+    await page.getByRole('link', { name: 'Other page' }).click();
+    await expect(page).toHaveURL(/\/admin\/edit\?page=%2Fother$/);
+    await expect(page.locator('html')).toHaveAttribute('data-editor', 'on');
+  });
+
+  test('a link whose words are editable starts editing instead', async ({ page }) => {
+    await open(page);
+    await page.locator('[data-copy="home.cta"]').click();
+    await expect(page).toHaveURL(/page=\/$/);
+  });
+});
+
 test.describe('editable texts are marked', () => {
   test('the resting mark shows on light and dark backgrounds, and the bar counts the texts', async ({ page }) => {
     await open(page);
