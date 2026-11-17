@@ -10,6 +10,8 @@
 //   GET  /admin/item-form.js, /admin/list-page.js  the list page's scripts (the form is its own module, which the edit view opens too)
 //   GET  /admin/changes                       waiting, recent and undone changes, as plain HTML
 //   POST /admin/api/changes                   { ops: Operation[] } submits a change
+//   POST /admin/api/uploads?list=&field=      an image, as the body; kept as it is (only when `uploads` is given)
+//   POST /admin/api/uploads/renditions        { key, list, field, crop?, width } makes one size of an upload
 //   POST /admin/api/check                     { key, text } says whether a text would be accepted
 //   POST /admin/api/changes/<id>/approve      admins only
 //   POST /admin/api/changes/<id>/reject       admins only
@@ -23,6 +25,7 @@ import type { Change, Mode, Outcome, Refusal, Store } from '../core/store.js';
 import type { ItemValues, Problem } from '../core/types.js';
 import { can, identify, type AccessEnv, type Action, type Identity } from './access.js';
 import { orderItems } from '../core/read.js';
+import { createUploadRoutes, uploadsNotSetUp, type UploadsOptions } from './uploads.js';
 import { EDITOR_CSS, EDITOR_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
 
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -42,6 +45,8 @@ export interface EditorOptions {
   /** For tests: the keys an Access token is checked against, and the time it is checked at. */
   keys?: JWTVerifyGetKey;
   now?: () => Date;
+  /** The bucket and images binding for uploaded images. Without it, an uploaded image is refused on save. */
+  uploads?: UploadsOptions;
 }
 
 export interface Editor {
@@ -126,6 +131,8 @@ function describeOp(content: Content, o: Operation): string {
 export function createEditor(options: EditorOptions): Editor {
   const { content, store, mode, site } = options;
 
+  const uploads = options.uploads ? createUploadRoutes(content, options.uploads, json) : null;
+
   const ownOrigin = (request: Request): string => site.origin ?? new URL(request.url).origin;
 
   /** Who may undo: anyone who may edit when changes go live on their own, only admins when an admin reviews them. */
@@ -177,8 +184,15 @@ export function createEditor(options: EditorOptions): Editor {
         else fail(check.problems);
       } else if (o.op === 'addItem' || o.op === 'editItem') {
         const check = content.validateItem(o.list, o.values);
-        if (check.ok) checked.push({ ...o, values: check.values });
-        else fail(check.problems);
+        if (!check.ok) fail(check.problems);
+        else {
+          // An uploaded image takes its size from the stored original, and must be one made for this very field.
+          const settled = uploads ? await uploads.settle(o.list, check.values) : { problems: uploadsNotSetUp(content, o.list, check.values) };
+          if ('problems' in settled) {
+            if (settled.problems.length > 0) fail(settled.problems);
+            else checked.push({ ...o, values: check.values });
+          } else checked.push({ ...o, values: settled.values });
+        }
         if (o.op === 'addItem') growth.set(o.list, (growth.get(o.list) ?? 0) + 1);
       } else {
         if (!content.lists.has(o.list)) fail([{ field: '_item', kind: 'unknown', message: `There is no list called ${o.list}.` }]);
@@ -231,11 +245,40 @@ export function createEditor(options: EditorOptions): Editor {
     return answer(request, await store.submit({ ops: checked.ops, by: identity.email }, mode));
   }
 
-  /** Writes need the site's own Origin; those that carry a body need JSON, too. */
-  function writeGate(request: Request, hasBody: boolean): Response | null {
+  /** Stores an uploaded original: the image is the body, so only the Origin is checked, and the size limit is the image's own. */
+  async function upload(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return wrongMethod('POST');
+    const gate = originGate(request);
+    if (gate) return gate;
+    return uploads!.upload(request, new URL(request.url).searchParams, (options.now ?? (() => new Date()))());
+  }
+
+  async function rendition(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return wrongMethod('POST');
+    const gate = writeGate(request, true);
+    if (gate) return gate;
+    const body = await readBody(request);
+    if (body instanceof Response) return body;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body.text);
+    } catch {
+      parsed = null;
+    }
+    return uploads!.rendition(parsed);
+  }
+
+  function originGate(request: Request): Response | null {
     if (request.headers.get('origin') !== ownOrigin(request)) {
       return json(403, { error: 'cross-site', message: 'This can only be sent from the site’s own editor.' });
     }
+    return null;
+  }
+
+  /** Writes need the site's own Origin; those that carry a body need JSON, too. */
+  function writeGate(request: Request, hasBody: boolean): Response | null {
+    const crossSite = originGate(request);
+    if (crossSite) return crossSite;
     if (hasBody && !(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) {
       return json(415, { error: 'not-json', message: 'Send the changes as JSON.' });
     }
@@ -416,6 +459,8 @@ export function createEditor(options: EditorOptions): Editor {
       if (pathname === '/admin/editor.js') return editorFile(request, 'text/javascript; charset=utf-8', EDITOR_JS);
       if (pathname === '/admin/editor.css') return editorFile(request, 'text/css; charset=utf-8', EDITOR_CSS);
       if (pathname === '/admin/api/check') return can(identity, 'edit') ? check(request) : forbidden();
+      if (uploads && pathname === '/admin/api/uploads') return can(identity, 'edit') ? upload(request) : forbidden();
+      if (uploads && pathname === '/admin/api/uploads/renditions') return can(identity, 'edit') ? rendition(request) : forbidden();
       if (pathname === '/admin/api/changes') return can(identity, 'edit') ? submit(request, identity) : forbidden();
       const decision = /^\/admin\/api\/changes\/([^/]+)\/(approve|reject|undo)$/.exec(pathname);
       if (decision) {

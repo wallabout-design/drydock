@@ -3,6 +3,7 @@ import type { Operation } from '../core/change.js';
 import type { Content } from '../core/declare.js';
 import type { Mode, Store } from '../core/store.js';
 import { type AccessEnv } from './access.js';
+import { type UploadsOptions } from './uploads.js';
 export declare const MAX_BODY_BYTES: number;
 export interface EditorSite {
     /** Gets the public page at `path` (such as `/about`) exactly as a signed-out visitor gets it. */
@@ -18,6 +19,8 @@ export interface EditorOptions {
     /** For tests: the keys an Access token is checked against, and the time it is checked at. */
     keys?: JWTVerifyGetKey;
     now?: () => Date;
+    /** The bucket and images binding for uploaded images. Without it, an uploaded image is refused on save. */
+    uploads?: UploadsOptions;
 }
 export interface Editor {
     /** The response for a path the editor owns, or null for any other path. */

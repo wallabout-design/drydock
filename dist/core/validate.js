@@ -120,12 +120,43 @@ function checkChoice(field, raw) {
         ? { value: raw }
         : { problem: problem(field.name, 'format', `Please choose one of the options for ${field.label}.`) };
 }
-const UPLOAD_KEY = /^\d{4}\/(0[1-9]|1[0-2])\/[A-Za-z0-9_-]{22,32}$/;
+/** The shape of an upload's key: `<yyyy>/<mm>/<22 to 32 letters, digits, - or _>`. */
+export const UPLOAD_KEY = /^\d{4}\/(0[1-9]|1[0-2])\/[A-Za-z0-9_-]{22,32}$/;
 const isWhole = (n, max) => Number.isInteger(n) && n >= 1 && n <= max;
 /** The `a:b` of an aspect setting as one number, width over height. */
 function aspectRatio(aspect) {
     const [a, b] = aspect.split(':').map(Number);
     return a / b;
+}
+/**
+ * Checks the part of an original to show, against the original's size and the field's `aspect`.
+ * The upload routes call this too, with the size read from the stored original.
+ */
+export function checkCrop(field, raw, width, height) {
+    const broken = problem(field.name, 'format', `${field.label} could not be read. Please choose the image again.`);
+    const max = LIMITS.image.original;
+    if (raw === undefined) {
+        if (field.aspect !== undefined) {
+            return { problem: problem(field.name, 'empty', `Please choose the part of ${field.label.toLowerCase()} to show (${field.aspect}).`) };
+        }
+        return { crop: undefined };
+    }
+    const c = raw;
+    if (typeof c !== 'object' || c === null || Array.isArray(c))
+        return { problem: broken };
+    const { x, y, w, h } = c;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || !isWhole(w, max) || !isWhole(h, max))
+        return { problem: broken };
+    if (x < 0 || y < 0 || x + w > width || y + h > height) {
+        return { problem: problem(field.name, 'range', `The part of ${field.label.toLowerCase()} you chose reaches outside the image. Please choose it again.`) };
+    }
+    if (field.aspect !== undefined) {
+        const wanted = aspectRatio(field.aspect);
+        if (Math.abs(w / h - wanted) / wanted > 0.01) {
+            return { problem: problem(field.name, 'range', `The part of ${field.label.toLowerCase()} you chose is the wrong shape (it should be ${field.aspect}). Please choose it again.`) };
+        }
+    }
+    return { crop: { x: x, y: y, w, h } };
 }
 function checkUpload(content, list, field, raw) {
     const broken = problem(field.name, 'format', `${field.label} could not be read. Please choose the image again.`);
@@ -133,29 +164,10 @@ function checkUpload(content, list, field, raw) {
     const max = LIMITS.image.original;
     if (typeof key !== 'string' || !UPLOAD_KEY.test(key) || !isWhole(width, max) || !isWhole(height, max))
         return { problem: broken };
-    let kept;
-    if (crop !== undefined) {
-        const c = crop;
-        if (typeof c !== 'object' || c === null || Array.isArray(c))
-            return { problem: broken };
-        const { x, y, w, h } = c;
-        if (!Number.isInteger(x) || !Number.isInteger(y) || !isWhole(w, max) || !isWhole(h, max))
-            return { problem: broken };
-        if (x < 0 || y < 0 || x + w > width || y + h > height) {
-            return { problem: problem(field.name, 'range', `The part of ${field.label.toLowerCase()} you chose reaches outside the image. Please choose it again.`) };
-        }
-        if (field.aspect !== undefined) {
-            const wanted = aspectRatio(field.aspect);
-            if (Math.abs(w / h - wanted) / wanted > 0.01) {
-                return { problem: problem(field.name, 'range', `The part of ${field.label.toLowerCase()} you chose is the wrong shape (it should be ${field.aspect}). Please choose it again.`) };
-            }
-        }
-        kept = { x: x, y: y, w, h };
-    }
-    else if (field.aspect !== undefined) {
-        return { problem: problem(field.name, 'empty', `Please choose the part of ${field.label.toLowerCase()} to show (${field.aspect}).`) };
-    }
-    const shape = kept === undefined ? {} : { crop: kept };
+    const checked = checkCrop(field, crop, width, height);
+    if ('problem' in checked)
+        return checked;
+    const shape = checked.crop === undefined ? {} : { crop: checked.crop };
     if (field.decorative)
         return { value: { key, alt: '', width, height, ...shape } };
     const alt = checkAlt(content, list, field, raw.alt);
