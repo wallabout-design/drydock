@@ -14,6 +14,27 @@ Licensed under the MIT licence (see `LICENSE`). The design is `standards/content
 
 `d1Store(db, { content })` from `@wallabout-design/editor/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/editor/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
 
+## Uploaded images
+
+An image field can hold an upload. The original is kept untouched in the site's R2 bucket, and the sizes a page needs are made from it by the site's Worker, only from `/admin` when staff save, with Cloudflare's `IMAGES` binding and its free allowance. The public route only reads files that exist, so a visitor can't spend the allowance. Sizes are WebP.
+
+1. Bind the bucket and the images service in `wrangler.jsonc`:
+
+   ```jsonc
+   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "<site>-media" }],
+   "images": { "binding": "IMAGES" }
+   ```
+
+2. Give the editor both: `createEditor({ …, uploads: { bucket: env.MEDIA, images: env.IMAGES } })`. Without `uploads`, an item holding an uploaded image is refused on save with a message saying so.
+3. Let the Worker answer the site's media paths, before anything else answers them: `if (pathname.startsWith('/media/')) return serveMedia(request, env.MEDIA)` (`serveMedia` is exported from `@wallabout-design/editor/server`). `/media/*` must reach the Worker, so it must not be left to static assets (add it to `run_worker_first`). It only reads `renditions/…`, never transforms, and answers 404 for anything else, every `originals/` path included.
+
+Things to know:
+
+- Each image view is one Worker request. The Workers free plan allows 100,000 a day, which is the ceiling.
+- The images service makes 5,000 new transformations a month for each account. Past that, saving an image answers with a sentence saying the allowance is used up; sizes already made keep working. A site moving many images at once should count: 950 images at two widths is about 1,900.
+- Originals are up to 15 MB, JPEG, PNG or WebP (decided by the file's first bytes). Originals no item uses stay in the bucket; nothing cleans them up yet.
+- A preview deployment shows uploaded images only if its Worker can read the production bucket (bind the same bucket there).
+
 ## Merge content edits
 
 With the git store in `auto` mode, a change is a pull request from a `content-edit/*` branch. A reusable workflow merges it once the tests pass, but only if every changed file is under `content/` and is the texts file or an item of a declared list, every changed value passes the site's rules again, and the `test` check passed. Anything else gets the label `status:needs-human-review` and a comment saying why. In `review` mode it does nothing.

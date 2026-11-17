@@ -3,3 +3,14 @@ export { loadSnapshotFromD1, type LoadOptions, type ReadDb, type ReadStatement }
 export * from '../stores/git/index.js';
 export { d1Store, HISTORY_KEPT, type D1Like, type D1Options, type D1Statement } from '../stores/d1/index.js';
 export { createEditor, isAdminPath, parseOps, MAX_BODY_BYTES, type Editor, type EditorOptions, type EditorSite } from './editor.js';
+export {
+  MAX_UPLOAD_BYTES,
+  serveMedia,
+  type ImagesBinding,
+  type ImagesResult,
+  type ImagesTransformer,
+  type MediaBucket,
+  type MediaObject,
+  type MediaObjectBody,
+  type UploadsOptions,
+} from './uploads.js';

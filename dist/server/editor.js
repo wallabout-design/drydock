@@ -1,5 +1,6 @@
 import { can, identify } from './access.js';
 import { orderItems } from '../core/read.js';
+import { createUploadRoutes, uploadsNotSetUp } from './uploads.js';
 import { EDITOR_CSS, EDITOR_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
 export const MAX_BODY_BYTES = 64 * 1024;
 const NO_STORE = { 'cache-control': 'no-store' };
@@ -75,6 +76,7 @@ function describeOp(content, o) {
 }
 export function createEditor(options) {
     const { content, store, mode, site } = options;
+    const uploads = options.uploads ? createUploadRoutes(content, options.uploads, json) : null;
     const ownOrigin = (request) => site.origin ?? new URL(request.url).origin;
     /** Who may undo: anyone who may edit when changes go live on their own, only admins when an admin reviews them. */
     const undoAction = mode === 'auto' ? 'edit' : 'approve';
@@ -125,10 +127,20 @@ export function createEditor(options) {
             }
             else if (o.op === 'addItem' || o.op === 'editItem') {
                 const check = content.validateItem(o.list, o.values);
-                if (check.ok)
-                    checked.push({ ...o, values: check.values });
-                else
+                if (!check.ok)
                     fail(check.problems);
+                else {
+                    // An uploaded image takes its size from the stored original, and must be one made for this very field.
+                    const settled = uploads ? await uploads.settle(o.list, check.values) : { problems: uploadsNotSetUp(content, o.list, check.values) };
+                    if ('problems' in settled) {
+                        if (settled.problems.length > 0)
+                            fail(settled.problems);
+                        else
+                            checked.push({ ...o, values: check.values });
+                    }
+                    else
+                        checked.push({ ...o, values: settled.values });
+                }
                 if (o.op === 'addItem')
                     growth.set(o.list, (growth.get(o.list) ?? 0) + 1);
             }
@@ -192,11 +204,44 @@ export function createEditor(options) {
             return json(422, { error: 'invalid', problems: checked.problems });
         return answer(request, await store.submit({ ops: checked.ops, by: identity.email }, mode));
     }
-    /** Writes need the site's own Origin; those that carry a body need JSON, too. */
-    function writeGate(request, hasBody) {
+    /** Stores an uploaded original: the image is the body, so only the Origin is checked, and the size limit is the image's own. */
+    async function upload(request) {
+        if (request.method !== 'POST')
+            return wrongMethod('POST');
+        const gate = originGate(request);
+        if (gate)
+            return gate;
+        return uploads.upload(request, new URL(request.url).searchParams, (options.now ?? (() => new Date()))());
+    }
+    async function rendition(request) {
+        if (request.method !== 'POST')
+            return wrongMethod('POST');
+        const gate = writeGate(request, true);
+        if (gate)
+            return gate;
+        const body = await readBody(request);
+        if (body instanceof Response)
+            return body;
+        let parsed;
+        try {
+            parsed = JSON.parse(body.text);
+        }
+        catch {
+            parsed = null;
+        }
+        return uploads.rendition(parsed);
+    }
+    function originGate(request) {
         if (request.headers.get('origin') !== ownOrigin(request)) {
             return json(403, { error: 'cross-site', message: 'This can only be sent from the site’s own editor.' });
         }
+        return null;
+    }
+    /** Writes need the site's own Origin; those that carry a body need JSON, too. */
+    function writeGate(request, hasBody) {
+        const crossSite = originGate(request);
+        if (crossSite)
+            return crossSite;
         if (hasBody && !(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) {
             return json(415, { error: 'not-json', message: 'Send the changes as JSON.' });
         }
@@ -382,6 +427,10 @@ export function createEditor(options) {
                 return editorFile(request, 'text/css; charset=utf-8', EDITOR_CSS);
             if (pathname === '/admin/api/check')
                 return can(identity, 'edit') ? check(request) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads')
+                return can(identity, 'edit') ? upload(request) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads/renditions')
+                return can(identity, 'edit') ? rendition(request) : forbidden();
             if (pathname === '/admin/api/changes')
                 return can(identity, 'edit') ? submit(request, identity) : forbidden();
             const decision = /^\/admin\/api\/changes\/([^/]+)\/(approve|reject|undo)$/.exec(pathname);
