@@ -5,7 +5,7 @@
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
-import { ACCESS_HEADER, createEditor } from '../dist/server/index.js';
+import { ACCESS_HEADER, createEditor, serveMedia } from '../dist/server/index.js';
 
 const port = Number(process.argv[2]);
 const mode = process.argv[3] === 'review' ? 'review' : 'auto';
@@ -45,6 +45,7 @@ const content = defineContent({
           ],
         },
         { name: 'photo', label: 'Photo', type: 'image' },
+        { name: 'banner', label: 'Banner', type: 'image', aspect: '3:2', widths: [200, 400], full: 800, minWidth: 600 },
       ],
     },
   ],
@@ -96,11 +97,63 @@ const token = (email) =>
     .setExpirationTime('1h')
     .sign(pair.privateKey);
 
+// A bucket and an images service that live in memory. The images service reads a
+// PNG's real size from its header and "makes" a size by answering a few bytes of
+// WebP, so the tests can see what was asked for. /__test/failnext makes the next
+// size fail, as the service would when it is down.
+// A real 1 by 1 WebP, so a browser can show a made size.
+const TINY_WEBP = Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==', 'base64');
+let objects;
+let calls;
+let failNext;
+const bucket = {
+  async head(key) {
+    const o = objects.get(key);
+    return o ? { size: o.value.length, customMetadata: o.customMetadata } : null;
+  },
+  async get(key) {
+    const o = objects.get(key);
+    return o ? { size: o.value.length, customMetadata: o.customMetadata, body: new Blob([o.value]).stream() } : null;
+  },
+  async put(key, value, options) {
+    objects.set(key, { value: new Uint8Array(value), ...options });
+  },
+};
+const images = {
+  async info(stream) {
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    const view = new DataView(bytes.buffer, bytes.byteOffset);
+    return { format: 'image/png', width: view.getUint32(16), height: view.getUint32(20) };
+  },
+  input() {
+    const call = {};
+    const t = {
+      transform(o) {
+        Object.assign(call, o);
+        return t;
+      },
+      async output() {
+        if (failNext > 0) {
+          failNext--;
+          throw new Error('the images service is down');
+        }
+        calls.push(call);
+        return { response: () => new Response(TINY_WEBP, { headers: { 'content-type': 'image/webp' } }) };
+      },
+    };
+    return t;
+  },
+};
+
 let store;
 let editor;
 function reset() {
+  objects = new Map();
+  calls = [];
+  failNext = 0;
   store = fakeStore({ initial: START() });
   editor = createEditor({
+    uploads: { bucket, images },
     content,
     store,
     mode,
@@ -131,6 +184,18 @@ createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === '/__test/state') return send(200, await store.read());
+  if (url.pathname === '/__test/bucket') {
+    return send(200, { keys: [...objects.keys()], calls, originals: [...objects].filter(([k]) => k.startsWith('originals/')).map(([k, o]) => ({ key: k, size: o.value.length, ...o.customMetadata })) });
+  }
+  if (url.pathname === '/__test/failnext') {
+    failNext = Number(url.searchParams.get('count') ?? 1);
+    return send(200, {});
+  }
+  if (url.pathname.startsWith('/media/')) {
+    const made = await serveMedia(new Request(url, { method: req.method }), bucket);
+    res.writeHead(made.status, Object.fromEntries(made.headers));
+    return res.end(Buffer.from(await made.arrayBuffer()));
+  }
   if (url.pathname === '/__test/reset') {
     reset();
     return send(200, {});

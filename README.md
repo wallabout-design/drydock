@@ -33,6 +33,7 @@ Things to know:
 - Each image view is one Worker request. The Workers free plan allows 100,000 a day, which is the ceiling.
 - The images service makes 5,000 new transformations a month for each account. Past that, saving an image answers with a sentence saying the allowance is used up; sizes already made keep working. A site moving many images at once should count: 950 images at two widths is about 1,900.
 - Originals are up to 15 MB, JPEG, PNG or WebP (decided by the file's first bytes). Originals no item uses stay in the bucket; nothing cleans them up yet.
+- The form shows a chosen photo before it is uploaded from a `blob:` address. The list page allows that itself. On the edit view the form opens over the site's own page, so a site with a content security policy needs `blob:` in its `img-src` there (and `'self'`, for stored images), or the preview stays empty.
 - A preview deployment shows uploaded images only if its Worker can read the production bucket (bind the same bucket there).
 
 ## Merge content edits

@@ -228,6 +228,53 @@ describe('uploading an original', () => {
   });
 });
 
+describe('what the item form is told', () => {
+  const SETTINGS = /id="editor-settings">(.*?)<\/script>/;
+  const page = async (m: ReturnType<typeof make>) => {
+    const res = (await m.editor.handle(new Request(ORIGIN + '/admin/lists/rooms', { headers: { [ACCESS_HEADER]: await token('ed@example.com') } }), env))!;
+    return JSON.parse(SETTINGS.exec(await res.text())![1]!);
+  };
+
+  it('says uploads are set up only when the site gave `uploads`', async () => {
+    expect((await page(make())).uploads).toEqual({ api: '/admin/api/uploads', maxBytes: 15 * 1024 * 1024 });
+    expect((await page(make({}, false))).uploads).toBeUndefined();
+  });
+
+  it('lists the sizes saving will ask for, from the crop, and the address of the largest', async () => {
+    const m = make();
+    const { key } = await upload(m);
+    const ask = async (crop: unknown, field = 'photo') =>
+      (await post(m.editor, 'editor', '/admin/api/uploads/sizes', { json: { key, list: 'rooms', field, crop } }))!;
+    const res = await ask(CROP);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sizes: [400, 800, 1600], preview: `/media/${key}/c0-500-3000-3000/800.webp`, width: 4000, height: 6000 });
+    // A narrower crop: its own width is the last size, and there is no larger one.
+    expect(((await (await ask({ x: 0, y: 0, w: 500, h: 500 })).json()) as { sizes: number[] }).sizes).toEqual([400, 500]);
+    expect((await ask({ x: 0, y: 0, w: 500, h: 400 })).status).toBe(422);
+    // Another field's upload is not this field's, and a field with no shape needs no crop.
+    expect((await ask(CROP, 'other')).status).toBe(404);
+    const plain = await upload(m, 'other');
+    const whole = (await post(m.editor, 'editor', '/admin/api/uploads/sizes', { json: { key: plain.key, list: 'rooms', field: 'other' } }))!;
+    expect(await whole.json()).toMatchObject({ sizes: [480, 960, 1600], preview: `/media/${plain.key}/whole/1600.webp` });
+    expect((await post(m.editor, 'nobody', '/admin/api/uploads/sizes', { json: { key } }))!.status).toBe(403);
+    expect(m.calls).toHaveLength(0);
+  });
+
+  it('gives a stored original back to staff, only for the field it was uploaded for', async () => {
+    const m = make();
+    const { key } = await upload(m, 'photo', PNG);
+    const get = async (query: string, who = true) =>
+      (await m.editor.handle(new Request(`${ORIGIN}/admin/api/uploads/original?${query}`, { headers: who ? { [ACCESS_HEADER]: await token('ed@example.com') } : {} }), env))!;
+    const res = await get(`key=${key}&list=rooms&field=photo`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
+    expect((await get(`key=${key}&list=rooms&field=other`)).status).toBe(404);
+    expect((await get(`key=nope&list=rooms&field=photo`)).status).toBe(404);
+    expect((await get(`key=${key}&list=rooms&field=photo`, false)).status).toBe(403);
+  });
+});
+
 describe('making a size', () => {
   it('cuts the crop in whole pixels, makes one WebP and stores it', async () => {
     const m = make();

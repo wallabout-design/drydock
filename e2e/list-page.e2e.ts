@@ -204,6 +204,7 @@ test.describe('move', () => {
     await expect(page.locator('[data-item="porch"] button:focus')).toHaveCount(1);
 
     await page.getByRole('button', { name: 'undo' }).click();
+    await expect(titles(page)).toHaveText(['Attic', 'Porch', 'Blue room']);
     expect(await ids(page)).toEqual(['attic', 'porch', 'blue']);
   });
 });

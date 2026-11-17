@@ -724,6 +724,7 @@ async function openForm(entry, item) {
   const close = (focus) => {
     if (!formOpen) return;
     formOpen = false;
+    form.destroy();
     // Closing a modal dialog hands focus back to what was focused before it opened (WebKit does
     // this after close() returns, and that element is gone once the tools are drawn again). So
     // focus is set again once the dialog has finished closing, not only now.
@@ -741,6 +742,7 @@ async function openForm(entry, item) {
   const form = module.createItemForm({
     list: decl,
     item,
+    uploads: settings.uploads,
     onCancel: () => close(item ? { id: item.id, action: 'edit' } : { id: null }),
     async onSubmit(values) {
       const id = item ? item.id : newId();
