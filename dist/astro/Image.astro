@@ -1,0 +1,28 @@
+---
+// An image field's picture: an uploaded image gets srcset and sizes, and with
+// `dark` the page shows that image in dark mode through a <picture>. `field` is
+// the image field the site declared. The attributes come from imageMarkup.
+import { imageMarkup, type ImageField, type ImageValue } from '@wallabout-design/editor';
+
+interface Props {
+  field: ImageField;
+  value: ImageValue;
+  dark?: ImageValue;
+  prefix?: string;
+  loading?: 'lazy' | 'eager';
+  class?: string;
+}
+const { field, value, dark, prefix, loading, class: className } = Astro.props;
+const markup = imageMarkup(field, value, { dark, prefix });
+const img = { ...markup.img, loading, class: className };
+---
+{
+  markup.dark ? (
+    <picture>
+      <source media={markup.dark.media} srcset={markup.dark.srcset} sizes={markup.dark.sizes} />
+      <img {...img} />
+    </picture>
+  ) : (
+    <img {...img} />
+  )
+}

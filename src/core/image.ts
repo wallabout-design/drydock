@@ -70,3 +70,47 @@ export function imageSources(field: ImageField, value: ImageValue, options: Imag
   if (full !== undefined) result.full = address(full);
   return result;
 }
+
+/** The options for the markup of an image. */
+export interface ImageMarkupOptions extends ImageSourcesOptions {
+  /** A second image shown in dark mode. Its own alt text is not used: the light image's alt text describes both. */
+  dark?: ImageValue;
+}
+
+/** The attributes of an image's `<img>`, and the `<source>` for dark mode when there is one. */
+export interface ImageMarkup {
+  img: { src: string; alt: string; srcset?: string; sizes?: string; width?: number; height?: number };
+  dark?: { media: string; srcset: string; sizes?: string };
+}
+
+/**
+ * The attributes for an image, as plain values: the framework helpers set them
+ * as attributes, so every address and alt text is escaped by the framework.
+ * A decorative field gets `alt=""`. An address value gets only `src` and `alt`.
+ */
+export function imageMarkup(field: ImageField, value: ImageValue, options: ImageMarkupOptions = {}): ImageMarkup {
+  const alt = field.decorative ? '' : value.alt;
+  const shown = imageSources(field, value, { prefix: options.prefix });
+  const result: ImageMarkup = {
+    img: 'srcset' in shown ? { src: shown.src, srcset: shown.srcset, sizes: shown.sizes, width: shown.width, height: shown.height, alt } : { src: shown.src, alt },
+  };
+  if (options.dark !== undefined) {
+    const dark = imageSources(field, options.dark, { prefix: options.prefix });
+    result.dark = 'srcset' in dark ? { media: DARK_MEDIA, srcset: dark.srcset, sizes: dark.sizes } : { media: DARK_MEDIA, srcset: dark.src };
+  }
+  return result;
+}
+
+/** The media query for a dark colour scheme. It follows the device setting only. */
+export const DARK_MEDIA = '(prefers-color-scheme: dark)';
+
+/**
+ * The address to link a lightbox to: an uploaded image's `full` address when
+ * the field has one, otherwise its widest address; an address value's `src`.
+ */
+export function fullSrc(field: ImageField, value: ImageValue, options: ImageSourcesOptions = {}): string {
+  if ('src' in value) return value.src;
+  const shown = imageSources(field, value, options);
+  if (shown.full !== undefined) return shown.full;
+  return (shown.srcset.split(', ').pop() as string).split(' ')[0] as string;
+}

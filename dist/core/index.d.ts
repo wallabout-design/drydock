@@ -1,5 +1,5 @@
 export { DeclarationError, defineContent, type Content } from './declare.js';
-export { cropSegment, imageSources, renditionWidths, type ImageSourcesOptions, type UploadSources } from './image.js';
+export { cropSegment, DARK_MEDIA, fullSrc, imageMarkup, imageSources, renditionWidths, type ImageMarkup, type ImageMarkupOptions, type ImageSourcesOptions, type UploadSources } from './image.js';
 export { LIMITS } from './limits.js';
 export { cleanLine, cleanLines, lengthOf } from './clean.js';
 export type * from './types.js';
