@@ -30,9 +30,10 @@ export function List(props) {
     return createElement(props.as ?? 'ul', { ...listAttrs(props.name), className: props.className }, items.map((item, i) => createElement(props.itemAs ?? 'li', { key: item.id, ...itemAttrs(item) }, props.children(item, i))));
 }
 /**
- * An image field's picture: an uploaded image gets srcset and sizes, and with
- * `dark` the page shows that image in dark mode through a <picture>. The
- * attributes come from imageMarkup, the same as the Astro component.
+ * An image field's picture: an uploaded image gets srcset and sizes, an AVIF
+ * source where the size has one, and with `dark` the page shows that image in
+ * dark mode through the same <picture>. The attributes come from imageMarkup,
+ * the same as the Astro component.
  */
 export function Image(props) {
     const options = { dark: props.dark, prefix: props.prefix };
@@ -47,7 +48,8 @@ export function Image(props) {
         loading: props.loading,
         className: props.className,
     });
-    if (!markup.dark)
+    if (markup.sources.length === 0)
         return img;
-    return createElement('picture', null, createElement('source', { media: markup.dark.media, srcSet: markup.dark.srcset, sizes: markup.dark.sizes }), img);
+    const sources = markup.sources.map((source, i) => createElement('source', { key: i, media: source.media, type: source.type, srcSet: source.srcset, sizes: source.sizes }));
+    return createElement('picture', null, ...sources, img);
 }

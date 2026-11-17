@@ -4,12 +4,12 @@
 // the month's image allowance.
 //
 //   POST /admin/api/uploads?list=<list>&field=<field>   the image itself; answers { key, width, height }
-//   POST /admin/api/uploads/renditions                   { key, list, field, crop?, width }: makes one size
-//   serveMedia(request, bucket)                          GET /media/<key>/<crop>/<w>.webp, for the site's Worker
+//   POST /admin/api/uploads/renditions                   { key, list, field, crop?, width }: makes one size, as WebP and as AVIF where it fits
+//   serveMedia(request, bucket)                          GET /media/<key>/<crop>/<w>.<webp|avif>, for the site's Worker
 //
 // The bucket and the images binding are described by the few methods used, so
 // a site passes its R2 bucket and `IMAGES` binding as they are and tests pass fakes.
-import { cropSegment, renditionWidths } from '../core/image.js';
+import { avifFits, cropSegment, renditionHeight, renditionWidths } from '../core/image.js';
 import { LIMITS } from '../core/limits.js';
 import { checkCrop, UPLOAD_KEY } from '../core/validate.js';
 /** The biggest original, in bytes. */
@@ -71,7 +71,8 @@ const wholeNumber = (text) => {
     return text !== undefined && Number.isInteger(n) && n >= 1 && n <= LIMITS.image.original ? n : null;
 };
 export const originalKey = (key) => `originals/${key}`;
-export const renditionKey = (key, crop, width) => `renditions/${key}/${cropSegment(crop)}/${width}.webp`;
+export const renditionKey = (key, crop, width, format = 'webp') => `renditions/${key}/${cropSegment(crop)}/${width}.${format}`;
+const MIME = { webp: 'image/webp', avif: 'image/avif' };
 /** What the bucket knows about an original, or why it can't be used for this field. */
 export async function readOriginal(bucket, key, list, field) {
     if (!UPLOAD_KEY.test(key))
@@ -88,6 +89,13 @@ export async function readOriginal(bucket, key, list, field) {
 function isAllowanceUsedUp(error) {
     const e = error;
     return e?.code === 9422 || (typeof e?.message === 'string' && e.message.includes('9422'));
+}
+/** One size, cut and resized from the original's stream in one format. Throws what the images service throws. */
+async function transformTo(body, crop, width, format, images) {
+    const transform = images.input(body);
+    const shaped = crop ? transform.transform({ trim: { left: crop.x, top: crop.y, width: crop.w, height: crop.h }, width }) : transform.transform({ width });
+    const made = (await shaped.output({ format: MIME[format], quality: WEBP_QUALITY })).response();
+    return { bytes: new Uint8Array(await made.arrayBuffer()), type: (made.headers.get('content-type') ?? '').split(';')[0]?.trim() ?? '' };
 }
 export function createUploadRoutes(content, options, json) {
     const { bucket, images } = options;
@@ -150,29 +158,49 @@ export function createUploadRoutes(content, options, json) {
                 return json(422, { error: 'width-not-allowed', message: `This field has no ${String(width)} px size. Reload the page and try again.` });
             }
             const target = renditionKey(key, checked.crop, width);
-            if (await bucket.head(target))
-                return json(200, { key: target, made: false });
-            const source = await bucket.get(originalKey(key));
-            if (!source)
-                return json(404, { error: 'unknown-upload', message: 'That image was not uploaded for this field. Please choose it again.' });
-            let made;
-            try {
-                const c = checked.crop;
-                const transform = images.input(source.body);
-                const shaped = c ? transform.transform({ trim: { left: c.x, top: c.y, width: c.w, height: c.h }, width }) : transform.transform({ width });
-                made = (await shaped.output({ format: 'image/webp', quality: WEBP_QUALITY })).response();
-            }
-            catch (error) {
-                if (isAllowanceUsedUp(error)) {
-                    return json(429, { error: 'allowance', message: 'This month’s free image allowance is used up, so new sizes can’t be made until next month. Images already on the site still work. Choose an image that is already online, or try again next month.' });
+            const avifTarget = renditionKey(key, checked.crop, width, 'avif');
+            const wantAvif = avifFits(width, renditionHeight(checked.crop?.w ?? original.width, checked.crop?.h ?? original.height, width));
+            const webpStored = (await bucket.head(target)) !== null;
+            const avifStored = wantAvif && (await bucket.head(avifTarget)) !== null;
+            if (webpStored && (avifStored || !wantAvif))
+                return json(200, { key: target, made: false, avif: avifStored });
+            let made = false;
+            if (!webpStored) {
+                let webp;
+                try {
+                    const source = await bucket.get(originalKey(key));
+                    if (!source)
+                        return json(404, { error: 'unknown-upload', message: 'That image was not uploaded for this field. Please choose it again.' });
+                    webp = await transformTo(source.body, checked.crop, width, 'webp', images);
                 }
-                return json(502, { error: 'resize-failed', message: `The ${width} px size could not be made. Please try again.` });
+                catch (error) {
+                    if (isAllowanceUsedUp(error)) {
+                        return json(429, { error: 'allowance', message: 'This month’s free image allowance is used up, so new sizes can’t be made until next month. Images already on the site still work. Choose an image that is already online, or try again next month.' });
+                    }
+                    return json(502, { error: 'resize-failed', message: `The ${width} px size could not be made. Please try again.` });
+                }
+                if (webp.type !== 'image/webp')
+                    return json(502, { error: 'resize-failed', message: `The ${width} px size could not be made as a WebP image. Please try again.` });
+                await bucket.put(target, webp.bytes, { httpMetadata: { contentType: 'image/webp', cacheControl: RENDITION_CACHE } });
+                made = true;
             }
-            const type = (made.headers.get('content-type') ?? '').split(';')[0]?.trim();
-            if (type !== 'image/webp')
-                return json(502, { error: 'resize-failed', message: `The ${width} px size could not be made as a WebP image. Please try again.` });
-            await bucket.put(target, new Uint8Array(await made.arrayBuffer()), { httpMetadata: { contentType: 'image/webp', cacheControl: RENDITION_CACHE } });
-            return json(200, { key: target, made: true });
+            // AVIF is best effort: the WebP above is what every page needs, so a failure here leaves the size
+            // WebP-only (no AVIF file, and no AVIF address on the page) until a later save makes it.
+            let avif = avifStored;
+            if (wantAvif && !avifStored) {
+                try {
+                    const source = await bucket.get(originalKey(key));
+                    const out = source ? await transformTo(source.body, checked.crop, width, 'avif', images) : null;
+                    if (out?.type === 'image/avif') {
+                        await bucket.put(avifTarget, out.bytes, { httpMetadata: { contentType: 'image/avif', cacheControl: RENDITION_CACHE } });
+                        avif = true;
+                    }
+                }
+                catch {
+                    // Stays WebP-only; see above.
+                }
+            }
+            return json(200, { key: target, made, avif });
         },
         async settle(list, values) {
             const problems = [];
@@ -211,9 +239,9 @@ export function uploadsNotSetUp(content, list, values) {
     }
     return problems;
 }
-const MEDIA_PATH = /^(\d{4}\/(?:0[1-9]|1[0-2])\/[A-Za-z0-9_-]{22,32})\/(whole|c\d{1,5}-\d{1,5}-\d{1,5}-\d{1,5})\/(\d{1,4})\.webp$/;
+const MEDIA_PATH = /^(\d{4}\/(?:0[1-9]|1[0-2])\/[A-Za-z0-9_-]{22,32})\/(whole|c\d{1,5}-\d{1,5}-\d{1,5}-\d{1,5})\/(\d{1,4})\.(webp|avif)$/;
 /**
- * For the site's Worker: answers `GET <prefix><key>/<crop>/<w>.webp` from the sizes already made.
+ * For the site's Worker: answers `GET <prefix><key>/<crop>/<w>.<webp|avif>` from the sizes already made.
  * It never transforms, and never reads under `originals/`: any other path is a 404.
  */
 export async function serveMedia(request, bucket, prefix = DEFAULT_MEDIA_PREFIX) {
@@ -227,11 +255,12 @@ export async function serveMedia(request, bucket, prefix = DEFAULT_MEDIA_PREFIX)
     const match = MEDIA_PATH.exec(pathname.slice(prefix.length));
     if (!match)
         return missing();
-    const object = await bucket.get(`renditions/${match[1]}/${match[2]}/${match[3]}.webp`);
+    const format = match[4];
+    const object = await bucket.get(`renditions/${match[1]}/${match[2]}/${match[3]}.${format}`);
     if (!object)
         return missing();
     return new Response(request.method === 'HEAD' ? null : object.body, {
         status: 200,
-        headers: { 'content-type': 'image/webp', 'cache-control': RENDITION_CACHE, 'x-content-type-options': 'nosniff' },
+        headers: { 'content-type': MIME[format], 'cache-control': RENDITION_CACHE, 'x-content-type-options': 'nosniff' },
     });
 }

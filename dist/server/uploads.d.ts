@@ -1,3 +1,4 @@
+import { type RenditionFormat } from '../core/image.js';
 import type { Content } from '../core/declare.js';
 import type { ImageCrop, ItemValues, Problem } from '../core/types.js';
 /** The biggest original, in bytes. */
@@ -37,7 +38,7 @@ export interface ImagesTransformer {
         width?: number;
     }): ImagesTransformer;
     output(options: {
-        format: 'image/webp';
+        format: 'image/webp' | 'image/avif';
         quality?: number;
     }): Promise<ImagesResult>;
 }
@@ -64,7 +65,7 @@ export declare function sniffImage(bytes: Uint8Array): 'image/jpeg' | 'image/png
 /** A key for a new original: this year and month, then 24 random characters. */
 export declare function newUploadKey(now: Date): string;
 export declare const originalKey: (key: string) => string;
-export declare const renditionKey: (key: string, crop: ImageCrop | undefined, width: number) => string;
+export declare const renditionKey: (key: string, crop: ImageCrop | undefined, width: number, format?: RenditionFormat) => string;
 /** What the bucket knows about an original, or why it can't be used for this field. */
 export declare function readOriginal(bucket: MediaBucket, key: string, list: string, field: string): Promise<{
     width: number;
@@ -86,7 +87,7 @@ export declare function createUploadRoutes(content: Content, options: UploadsOpt
 /** What an item with an upload gets when no bucket is set up. */
 export declare function uploadsNotSetUp(content: Content, list: string, values: ItemValues): Problem[];
 /**
- * For the site's Worker: answers `GET <prefix><key>/<crop>/<w>.webp` from the sizes already made.
+ * For the site's Worker: answers `GET <prefix><key>/<crop>/<w>.<webp|avif>` from the sizes already made.
  * It never transforms, and never reads under `originals/`: any other path is a 404.
  */
 export declare function serveMedia(request: Request, bucket: Pick<MediaBucket, 'get'>, prefix?: string): Promise<Response>;

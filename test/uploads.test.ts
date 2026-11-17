@@ -75,8 +75,9 @@ interface Call {
   trim?: { left: number; top: number; width: number; height: number };
   width?: number;
 }
-function fakeImages(over: { size?: { width: number; height: number }; fail?: unknown; type?: string } = {}) {
+function fakeImages(over: { size?: { width: number; height: number }; fail?: unknown; failAvif?: unknown; type?: string; avifAnswer?: string } = {}) {
   const calls: Call[] = [];
+  const formats: string[] = [];
   const images: ImagesBinding = {
     async info() {
       return { format: 'image/jpeg', ...(over.size ?? { width: 4000, height: 6000 }) };
@@ -88,16 +89,21 @@ function fakeImages(over: { size?: { width: number; height: number }; fail?: unk
           Object.assign(call, o);
           return t;
         },
-        async output() {
+        async output(options: { format: string }) {
           calls.push(call);
+          formats.push(options.format);
+          const avif = options.format === 'image/avif';
           if (over.fail) throw over.fail;
-          return { response: () => new Response('webp-bytes', { headers: { 'content-type': over.type ?? 'image/webp' } }) };
+          if (avif && over.failAvif) throw over.failAvif;
+          // The service answers WebP for an AVIF request above its pixel limit, without an error.
+          const type = avif && over.avifAnswer ? over.avifAnswer : (over.type ?? options.format);
+          return { response: () => new Response(`${type}-bytes`, { headers: { 'content-type': type } }) };
         },
       };
       return t;
     },
   };
-  return { images, calls };
+  return { images, calls, formats };
 }
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
@@ -229,14 +235,53 @@ describe('uploading an original', () => {
 });
 
 describe('making a size', () => {
-  it('cuts the crop in whole pixels, makes one WebP and stores it', async () => {
+  it('cuts the crop in whole pixels, makes a WebP and an AVIF, and stores both', async () => {
     const m = make();
     const { key } = await upload(m);
     const res = (await post(m.editor, 'editor', REND, { json: { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 } }))!;
     expect(res.status).toBe(200);
-    expect(m.calls).toEqual([{ trim: { left: 0, top: 500, width: 3000, height: 3000 }, width: 800 }]);
-    const made = m.objects.get(`renditions/${key}/c0-500-3000-3000/800.webp`)!;
-    expect(made.httpMetadata?.contentType).toBe('image/webp');
+    expect(await res.json()).toEqual({ key: `renditions/${key}/c0-500-3000-3000/800.webp`, made: true, avif: true });
+    const cut = { trim: { left: 0, top: 500, width: 3000, height: 3000 }, width: 800 };
+    expect(m.calls).toEqual([cut, cut]);
+    expect(m.formats).toEqual(['image/webp', 'image/avif']);
+    expect(m.objects.get(`renditions/${key}/c0-500-3000-3000/800.webp`)!.httpMetadata?.contentType).toBe('image/webp');
+    expect(m.objects.get(`renditions/${key}/c0-500-3000-3000/800.avif`)!.httpMetadata?.contentType).toBe('image/avif');
+  });
+
+  it('makes no AVIF for a size too big for it, and says so', async () => {
+    const m = make();
+    const { key } = await upload(m);
+    const res = (await post(m.editor, 'editor', REND, { json: { key, list: 'rooms', field: 'photo', crop: CROP, width: 1600 } }))!;
+    expect(await res.json()).toEqual({ key: `renditions/${key}/c0-500-3000-3000/1600.webp`, made: true, avif: false });
+    expect(m.formats).toEqual(['image/webp']);
+    expect([...m.objects.keys()].some((k) => k.endsWith('.avif'))).toBe(false);
+  });
+
+  it('stores no AVIF when the images service answers WebP for an AVIF request, and keeps the WebP', async () => {
+    const m = make({ avifAnswer: 'image/webp' });
+    const { key } = await upload(m);
+    const res = (await post(m.editor, 'editor', REND, { json: { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 } }))!;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ key: `renditions/${key}/c0-500-3000-3000/800.webp`, made: true, avif: false });
+    expect([...m.objects.keys()].some((k) => k.endsWith('.avif'))).toBe(false);
+  });
+
+  it('keeps the WebP when the AVIF fails, and makes only the missing AVIF of a size already made', async () => {
+    const m = make({ failAvif: new Error('boom') });
+    const { key } = await upload(m);
+    const body = { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 };
+    expect((await post(m.editor, 'editor', REND, { json: body }))!.status).toBe(200);
+    expect(m.objects.has(`renditions/${key}/c0-500-3000-3000/800.webp`)).toBe(true);
+    expect(m.objects.has(`renditions/${key}/c0-500-3000-3000/800.avif`)).toBe(false);
+
+    const retry = make();
+    const again = await upload(retry);
+    await post(retry.editor, 'editor', REND, { json: { ...body, key: again.key } });
+    retry.objects.delete(`renditions/${again.key}/c0-500-3000-3000/800.avif`);
+    retry.formats.length = 0;
+    const res = (await post(retry.editor, 'editor', REND, { json: { ...body, key: again.key } }))!;
+    expect(await res.json()).toEqual({ key: `renditions/${again.key}/c0-500-3000-3000/800.webp`, made: false, avif: true });
+    expect(retry.formats).toEqual(['image/avif']);
   });
 
   it('accepts the field’s full width, and answers 200 without making it again', async () => {
@@ -352,6 +397,16 @@ describe('saving an item with an upload', () => {
 describe('serveMedia', () => {
   const KEY = '2026/11/abcdefghijklmnopqrstuvwx';
   const get = (b: MediaBucket, path: string, method = 'GET') => serveMedia(new Request(ORIGIN + path, { method }), b);
+
+  it('serves a made AVIF size as AVIF, and refuses an AVIF path for a WebP that is not there', async () => {
+    const { bucket, objects } = fakeBucket();
+    objects.set(`renditions/${KEY}/whole/800.avif`, { value: new TextEncoder().encode('avif-bytes') });
+    const res = await get(bucket, `/media/${KEY}/whole/800.avif`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/avif');
+    expect((await get(bucket, `/media/${KEY}/whole/801.avif`)).status).toBe(404);
+    expect((await get(bucket, `/media/${KEY}/whole/800.webp`)).status).toBe(404);
+  });
 
   it('serves a made size with its headers', async () => {
     const { bucket, objects } = fakeBucket();

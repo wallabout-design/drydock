@@ -1,5 +1,5 @@
 export { DeclarationError, defineContent } from './declare.js';
-export { cropSegment, DARK_MEDIA, fullSrc, imageMarkup, imageSources, renditionWidths } from './image.js';
+export { avifFits, cropSegment, DARK_MEDIA, fullSrc, imageMarkup, imageSources, renditionHeight, renditionWidths } from './image.js';
 export { LIMITS } from './limits.js';
 export { cleanLine, cleanLines, lengthOf } from './clean.js';
 export { applyOperations, MAX_OPERATIONS } from './change.js';

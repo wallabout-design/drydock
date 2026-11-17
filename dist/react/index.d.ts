@@ -25,9 +25,10 @@ export declare function List(props: {
     children: (item: ListItem, index: number) => ReactNode;
 }): import("react").ReactElement<any, string | import("react").JSXElementConstructor<any>>;
 /**
- * An image field's picture: an uploaded image gets srcset and sizes, and with
- * `dark` the page shows that image in dark mode through a <picture>. The
- * attributes come from imageMarkup, the same as the Astro component.
+ * An image field's picture: an uploaded image gets srcset and sizes, an AVIF
+ * source where the size has one, and with `dark` the page shows that image in
+ * dark mode through the same <picture>. The attributes come from imageMarkup,
+ * the same as the Astro component.
  */
 export declare function Image(props: {
     field: ImageField;
