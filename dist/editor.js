@@ -77,10 +77,13 @@ const hint = make('p', { class: 'wd-editor__hint', id: 'wd-editor-hint' }, [
 const reviewNote = make('p', { class: 'wd-editor__note', hidden: '' }, [
   'Changes you save wait for an admin to approve them. Then they appear on the site.',
 ]);
+// Shown while a text inside a link is edited: the link's own page, so it can still be reached.
+const openLink = make('a', { class: 'wd-editor__open', hidden: '' }, ['open this link']);
 const bar = make('aside', { class: 'wd-editor', 'aria-label': 'text editor' }, [
   make('div', { class: 'wd-editor__top' }, [
     make('p', { class: 'wd-editor__who' }, [`Editing as ${settings.editor ?? 'staff'}`]),
     make('a', { href: settings.changesPage ?? '/admin/changes' }, ['Changes']),
+    openLink,
   ]),
   hint,
   reviewNote,
@@ -185,6 +188,8 @@ async function ruleProblem(key, text) {
 function startEditing(el) {
   if (editing === el) return;
   editing = el;
+  // A text inside a link: the click starts editing, so offer the link's page in the bar instead.
+  setOpenLink(el.closest('a[href]'));
   try {
     el.contentEditable = 'plaintext-only';
   } catch {
@@ -225,9 +230,10 @@ function record(key) {
   }
 }
 
-function stopEditing(el, { cancel = false } = {}) {
+function stopEditing(el, { cancel = false, keepLink = false } = {}) {
   if (editing !== el) return;
   editing = null;
+  if (!keepLink) setOpenLink(null);
   el.removeAttribute('contenteditable');
   showCounter(null, '');
   const key = el.dataset.copy;
@@ -235,6 +241,14 @@ function stopEditing(el, { cancel = false } = {}) {
     el.textContent = pending.get(key)?.after ?? shown.get(key) ?? '';
     say('Cancelled.');
   } else record(key);
+}
+
+/** Shows "open this link" for the link around an editing text (null hides it). */
+function setOpenLink(link) {
+  const to = link instanceof HTMLAnchorElement ? pageToEdit(link) : null;
+  openLink.hidden = to === null;
+  if (to !== null) openLink.href = `/admin/edit?page=${encodeURIComponent(to)}`;
+  else openLink.removeAttribute('href');
 }
 
 // The path (and query) a link goes to when it is a page of this site outside /admin, else null.
@@ -305,8 +319,14 @@ document.addEventListener(
 
 document.addEventListener('focusout', (event) => {
   const el = marked(event.target);
-  if (el && editing === el) stopEditing(el);
+  // Tabbing from the text to "open this link" keeps the link until it loses focus itself.
+  if (el && editing === el) stopEditing(el, { keepLink: event.relatedTarget === openLink });
 });
+// The link is hidden once focus leaves it, so a keyboard user can tab on past it.
+openLink.addEventListener('focusout', () => setOpenLink(null));
+// Pressing on the link must not move focus away from the text first, or the link
+// would be hidden before the click lands. The link then navigates as usual.
+openLink.addEventListener('mousedown', (event) => event.preventDefault());
 
 // Pasted and dropped content comes in as plain text on one line.
 document.addEventListener('paste', (event) => {

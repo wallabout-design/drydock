@@ -45,6 +45,25 @@ test.describe('moving between pages', () => {
     await page.locator('[data-copy="home.cta"]').click();
     await expect(page).toHaveURL(/page=\/$/);
   });
+
+  test('"open this link" in the bar goes to the link\'s page while its words are edited', async ({ page }) => {
+    await open(page);
+    const offer = bar(page).getByRole('link', { name: 'open this link' });
+    await expect(offer).toBeHidden();
+    await page.locator('[data-copy="home.cta"]').click();
+    await expect(offer).toBeVisible();
+    await offer.click();
+    await expect(page).toHaveURL(/\/admin\/edit\?page=%2Fother$/);
+  });
+
+  test('"open this link" goes once editing ends', async ({ page }) => {
+    await open(page);
+    const offer = bar(page).getByRole('link', { name: 'open this link' });
+    await page.locator('[data-copy="home.cta"]').click();
+    await expect(offer).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(offer).toBeHidden();
+  });
 });
 
 test.describe('editable texts are marked', () => {
