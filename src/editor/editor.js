@@ -791,6 +791,10 @@ for (const el of document.querySelectorAll('[data-copy]:not(meta)')) {
   el.tabIndex = 0;
   el.setAttribute('aria-describedby', hint.id);
 }
+hint.textContent =
+  surfaces.size === 0
+    ? 'No texts on this page can be edited.'
+    : `${surfaces.size} ${surfaces.size === 1 ? 'text' : 'texts'} on this page can be edited. ${hint.textContent}`;
 document.body.append(bar);
 document.documentElement.dataset.editor = 'on';
 render();
