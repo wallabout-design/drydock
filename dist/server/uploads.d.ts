@@ -1,4 +1,5 @@
 import type { Content } from '../core/declare.js';
+import type { ListItem } from '../core/read.js';
 import type { ImageCrop, ItemValues, Problem } from '../core/types.js';
 /** The biggest original, in bytes. */
 export declare const MAX_UPLOAD_BYTES: number;
@@ -70,7 +71,41 @@ export declare function readOriginal(bucket: MediaBucket, key: string, list: str
     width: number;
     height: number;
 } | null>;
+/** One size to make: exactly the body of `POST /admin/api/uploads/renditions`, and the item it is for. */
+export interface RenditionTask {
+    item: string;
+    key: string;
+    list: string;
+    field: string;
+    crop: ImageCrop | null;
+    width: number;
+}
+/** An item the page can't rebuild by itself, with why. */
+export interface RenditionProblem {
+    item: string;
+    title: string;
+    field: string;
+    label: string;
+    kind: 'crop' | 'original';
+    message: string;
+}
+/** What one request of the rebuild page's check found, for a run of items from `offset`. */
+export interface MissingReport {
+    list: string;
+    /** Items in the list, and the index to ask for next (null when the list is done). */
+    items: number;
+    offset: number;
+    next: number | null;
+    /** Sizes the items in this run need, and those that are not made yet. */
+    needed: number;
+    missing: RenditionTask[];
+    problems: RenditionProblem[];
+}
+/** Heads one check request may spend (a Worker request can make only so many subrequests); it always finishes the item it is on. */
+export declare const HEAD_BUDGET = 40;
 export interface UploadRoutes {
+    /** Which sizes the items of a list need and lack, from `offset`, within a bounded number of heads. */
+    missing(list: string, items: readonly ListItem[], offset: number): Promise<MissingReport>;
     /** The upload route's work, after the caller has checked who is asking and where from. */
     upload(request: Request, query: URLSearchParams, now: Date): Promise<Response>;
     /** The renditions route's work, given the parsed JSON body. */

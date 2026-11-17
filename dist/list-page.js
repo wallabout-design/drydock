@@ -279,3 +279,8 @@ rows.addEventListener('click', (event) => {
 });
 
 render();
+
+// A link from another page (the rebuild images page) opens one item's form: ?edit=<id>.
+const wanted = new URLSearchParams(location.search).get('edit');
+const wantedItem = wanted === null ? undefined : items.find((i) => i.id === wanted);
+if (wantedItem) openForm(wantedItem);

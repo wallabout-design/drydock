@@ -14,7 +14,7 @@ const TEAM = 'fixture.cloudflareaccess.com';
 const AUD = 'fixture-aud';
 const env = { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, EDITOR_EMAILS: 'ed@example.com', ADMIN_EMAILS: 'boss@example.com' };
 
-const content = defineContent({
+const declare = (photo = {}) => defineContent({
   texts: [
     { key: 'home.title', default: 'Welcome to the house', max: 30, label: 'Home title' },
     { key: 'home.intro', default: 'A quiet place by the lake.', max: 120, label: 'Home intro' },
@@ -44,7 +44,7 @@ const content = defineContent({
             { value: 'garden', label: 'The garden' },
           ],
         },
-        { name: 'photo', label: 'Photo', type: 'image' },
+        { name: 'photo', label: 'Photo', type: 'image', ...photo },
       ],
     },
   ],
@@ -56,6 +56,7 @@ const content = defineContent({
     },
   ],
 });
+
 
 const START = () => ({
   texts: { 'home.title': 'Welcome to the house', 'home.intro': 'A quiet place by the lake.', 'home.cta': 'Book a stay' },
@@ -96,15 +97,51 @@ const token = (email) =>
     .setExpirationTime('1h')
     .sign(pair.privateKey);
 
+// A stand-in for the site's R2 bucket and `IMAGES` binding (the package takes both as arguments).
+const objects = new Map();
+const bucket = {
+  async head(key) {
+    const o = objects.get(key);
+    return o ? { size: 1, customMetadata: o.customMetadata } : null;
+  },
+  async get(key) {
+    const o = objects.get(key);
+    return o ? { size: 1, customMetadata: o.customMetadata, body: new Blob(['x']).stream() } : null;
+  },
+  async put(key, _value, options) {
+    objects.set(key, { customMetadata: options?.customMetadata });
+  },
+};
+const allowance = { exhausted: false, left: null };
+const images = {
+  async info() {
+    return { format: 'image/jpeg', width: 4000, height: 3000 };
+  },
+  input() {
+    const t = {
+      transform: () => t,
+      async output() {
+        if (allowance.exhausted || allowance.left === 0) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
+        if (allowance.left !== null) allowance.left -= 1;
+        return { response: () => new Response('webp', { headers: { 'content-type': 'image/webp' } }) };
+      },
+    };
+    return t;
+  },
+};
+
 let store;
 let editor;
-function reset() {
-  store = fakeStore({ initial: START() });
+function reset(photo = {}, initial = START()) {
+  store = fakeStore({ initial });
+  allowance.exhausted = false;
+  allowance.left = null;
   editor = createEditor({
-    content,
+    content: declare(photo),
     store,
     mode,
     keys,
+    uploads: { bucket, images },
     site: {
       fetchPage: async (path) =>
         path === '/' || path === '/other'
@@ -135,6 +172,32 @@ createServer(async (req, res) => {
     reset();
     return send(200, {});
   }
+  if (url.pathname === '/__test/uploads') {
+    // Starts over with rooms that hold uploaded photos (their originals are in the bucket) and a photo field as declared.
+    const { rooms, photo } = JSON.parse(body.toString());
+    objects.clear();
+    const list = rooms.map(({ id, n, crop }) => {
+      const key = `2026/11/${String(n).padStart(24, 'a')}`;
+      objects.set(`originals/${key}`, { customMetadata: { list: 'rooms', field: 'photo', width: '4000', height: '3000' } });
+      return { id, values: { title: id, photo: { key, alt: 'a room', width: 4000, height: 3000, ...(crop ? { crop } : {}) } } };
+    });
+    reset(photo, { texts: START().texts, lists: { rooms: list } });
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/declare') {
+    // The site is deployed again with the photo field changed; the store and the bucket stay.
+    const keep = await store.read();
+    reset(JSON.parse(body.toString()), keep);
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/allowance') {
+    // { exhausted: true } now, or { left: n } after n more sizes, or { exhausted: false } to lift it.
+    const { exhausted = false, left = null } = JSON.parse(body.toString());
+    allowance.exhausted = exhausted;
+    allowance.left = left;
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/renditions') return send(200, [...objects.keys()].filter((k) => k.startsWith('renditions/')).sort());
   if (url.pathname === '/__test/other') {
     // Someone else edits a text behind the editor's back (always live, so the page is stale).
     const { key, text } = JSON.parse(body.toString());
