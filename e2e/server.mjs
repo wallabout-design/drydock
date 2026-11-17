@@ -168,3 +168,10 @@ createServer(async (req, res) => {
   res.writeHead(response.status, Object.fromEntries(response.headers));
   res.end(Buffer.from(await response.arrayBuffer()));
 }).listen(port, '127.0.0.1');
+
+// The run that started this server stops it when it ends. If the run is killed
+// instead (its parent process goes away), this server is re-parented: exit then.
+const parent = process.ppid;
+setInterval(() => {
+  if (process.ppid !== parent) process.exit(0);
+}, 1000).unref();
