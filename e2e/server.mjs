@@ -75,7 +75,7 @@ const PAGE = `<!doctype html>
 <main>
 <h1 data-copy="home.title">Welcome to the house</h1>
 <p data-copy="home.intro">A quiet place by the lake.</p>
-<p><a href="/book" data-copy="home.cta">Book a stay</a></p>
+<p><a href="/other" data-copy="home.cta">Book a stay</a></p>
 <ul data-list="rooms">
 <li data-item="blue">Blue room</li>
 <li data-item="attic">Attic</li>
