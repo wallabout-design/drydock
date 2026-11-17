@@ -1,2 +1,2 @@
-export declare const VERSION = "0.1.0";
+export declare const VERSION = "0.2.0";
 export * from './core/index.js';
