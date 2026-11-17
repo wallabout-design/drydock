@@ -65,7 +65,12 @@ test.describe('on the page', () => {
     await open(page);
     await page.getByRole('button', { name: 'add room' }).click();
     await form(page).getByRole('button', { name: 'save' }).click();
-    await expect(form(page).getByText(/needed|fill in|can’t be empty|required/i).first()).toBeVisible();
+    // Wait for the refusal itself. The label always says "(needed)", so text alone is there before
+    // the site answers; the answer then moves focus to Name, and what is typed next lands there.
+    const name = form(page).getByLabel('Name');
+    await expect(name).toHaveAttribute('aria-invalid', 'true');
+    await expect(name).toBeFocused();
+    await expect(form(page).getByText('Name is needed.')).toBeVisible();
     await form(page).getByLabel('Name').fill('Half done');
     await form(page).getByLabel('Beds').fill('99');
     await form(page).getByRole('button', { name: 'save' }).click();
