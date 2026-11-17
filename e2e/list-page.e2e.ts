@@ -204,7 +204,8 @@ test.describe('move', () => {
     await expect(page.locator('[data-item="porch"] button:focus')).toHaveCount(1);
 
     await page.getByRole('button', { name: 'undo' }).click();
-    expect(await ids(page)).toEqual(['attic', 'porch', 'blue']);
+    // The click answers before the server has applied the undo: wait for the store, don't read it once.
+    await expect.poll(() => ids(page)).toEqual(['attic', 'porch', 'blue']);
   });
 });
 
