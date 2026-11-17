@@ -16,6 +16,15 @@ export declare const LIMITS: {
         readonly max: 5000;
     };
     readonly fieldsPerList: 40;
+    /** What an image field may declare, and the biggest original. */
+    readonly image: {
+        readonly minWidth: 16;
+        readonly maxWidth: 2400;
+        readonly widthsMax: 4;
+        readonly defaultWidths: readonly [480, 960, 1600];
+        readonly sizes: 200;
+        readonly original: 12000;
+    };
     /** One item as JSON, in bytes. */
     readonly itemBytes: number;
 };

@@ -45,13 +45,43 @@ export interface ImageField extends FieldBase {
     type: 'image';
     /** The image is decoration: no alt text is asked for or kept. */
     decorative?: boolean;
+    /** The shape the page shows, as `'1:1'` or `'16:10'`. Left out, the image keeps its own shape. */
+    aspect?: string;
+    /** The widths, in pixels, to make for the page: 1 to 4 whole numbers from 16 to 2,400, ascending. Default `[480, 960, 1600]`. */
+    widths?: number[];
+    /** The `sizes` attribute for the page's `<img>`, at most 200 characters. */
+    sizes?: string;
+    /** One larger width, up to 2,400, for a lightbox. Must be more than the widest of `widths`. */
+    full?: number;
+    /** The narrowest original that looks sharp, in pixels. The form warns below it; nothing is refused. */
+    minWidth?: number;
 }
 export type Field = TextField | LongTextField | LinkField | NumberField | DateField | CheckboxField | ChoiceField | ImageField;
-/** An image value: an `https` address or a path on the site starting `/`, and alt text. */
-export interface ImageValue {
+/** An image that is already online: an `https` address or a path on the site starting `/`, and alt text. */
+export interface ImageAddress {
     src: string;
     alt: string;
 }
+/** The part of an original that is shown, in whole pixels of the original. */
+export interface ImageCrop {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+/** An uploaded image: where it is kept, alt text, the original's size and the part to show. */
+export interface ImageUpload {
+    /** `<yyyy>/<mm>/<22 to 32 letters, digits, - or _>`. */
+    key: string;
+    alt: string;
+    /** The original's size in pixels. */
+    width: number;
+    height: number;
+    /** Needed when the field has an `aspect`. */
+    crop?: ImageCrop;
+}
+/** An image value is an address or an upload, never both. */
+export type ImageValue = ImageAddress | ImageUpload;
 export type FieldValue = string | number | boolean | ImageValue;
 /** An item's fields, as stored. */
 export type ItemValues = Record<string, FieldValue>;
