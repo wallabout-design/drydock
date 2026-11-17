@@ -1,11 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import { AUTO, REVIEW } from './ports.js';
 
 // The text editor in a real browser, against the fixture site in server.mjs.
 // Texts are named by key (data-copy), never by repeating their words, except
 // where a test types its own.
 
-const AUTO = 'http://127.0.0.1:4811';
-const REVIEW = 'http://127.0.0.1:4812';
 const TITLE = '[data-copy="home.title"]';
 const INTRO = '[data-copy="home.intro"]';
 

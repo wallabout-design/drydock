@@ -1,11 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import { AUTO, REVIEW } from './ports.js';
 
 // Lists edited on the page itself (the edit view): edit, remove and move on each
 // item, add on the list, all opening the same item form as the list page. The
 // fixture page (server.mjs) has a `rooms` list of three plain-text items.
 
-const AUTO = 'http://127.0.0.1:4811';
-const REVIEW = 'http://127.0.0.1:4812';
 
 type Room = { id: string; values: Record<string, unknown> };
 const STARTING = ['blue', 'attic', 'porch'];

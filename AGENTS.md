@@ -10,7 +10,7 @@
 
 ## Checking a change
 
-Run `npm run verify` (type check, build, unit tests, then the browser tests in Chromium and WebKit) before pushing. The first time, run `npx playwright install chromium webkit`; the browser tests start fixture servers from `e2e/server.mjs` over the built `dist/`. `src/editor/editor.js` and `editor.css` are the browser files; `npm run build` copies them to `dist/` and into `src/server/editor-assets.ts` (generated, committed). CI runs the same command, then fails if `dist/` differs from `src/`.
+Run `npm run verify` (type check, build, unit tests, then the browser tests in Chromium and WebKit) before pushing. The first time, run `npx playwright install chromium webkit`; the browser tests start fixture servers from `e2e/server.mjs` over the built `dist/`. Each run picks its own free ports, so runs in different worktrees can go at the same time. `src/editor/editor.js` and `editor.css` are the browser files; `npm run build` copies them to `dist/` and into `src/server/editor-assets.ts` (generated, committed). CI runs the same command, then fails if `dist/` differs from `src/`.
 
 ## Releases
 

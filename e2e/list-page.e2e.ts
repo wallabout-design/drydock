@@ -1,11 +1,10 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { AUTO, REVIEW } from './ports.js';
 
 // The list page and the item form in a real browser, against the fixture site
 // in server.mjs: a `rooms` list with one field of every type, three rooms to
 // start with, room for two more.
 
-const AUTO = 'http://127.0.0.1:4811';
-const REVIEW = 'http://127.0.0.1:4812';
 
 type Room = { id: string; values: Record<string, unknown> };
 const STARTING = ['blue', 'attic', 'porch'];
