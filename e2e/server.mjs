@@ -14,7 +14,7 @@ const TEAM = 'fixture.cloudflareaccess.com';
 const AUD = 'fixture-aud';
 const env = { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, EDITOR_EMAILS: 'ed@example.com', ADMIN_EMAILS: 'boss@example.com' };
 
-const content = defineContent({
+const declare = (photo = {}) => defineContent({
   texts: [
     { key: 'home.title', default: 'Welcome to the house', max: 30, label: 'Home title' },
     { key: 'home.intro', default: 'A quiet place by the lake.', max: 120, label: 'Home intro' },
@@ -44,7 +44,7 @@ const content = defineContent({
             { value: 'garden', label: 'The garden' },
           ],
         },
-        { name: 'photo', label: 'Photo', type: 'image' },
+        { name: 'photo', label: 'Photo', type: 'image', ...photo },
         { name: 'banner', label: 'Banner', type: 'image', aspect: '3:2', widths: [200, 400], full: 800, minWidth: 600 },
       ],
     },
@@ -57,6 +57,7 @@ const content = defineContent({
     },
   ],
 });
+
 
 const START = () => ({
   texts: { 'home.title': 'Welcome to the house', 'home.intro': 'A quiet place by the lake.', 'home.cta': 'Book a stay' },
@@ -103,9 +104,10 @@ const token = (email) =>
 // size fail, as the service would when it is down.
 // A real 1 by 1 WebP, so a browser can show a made size.
 const TINY_WEBP = Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==', 'base64');
-let objects;
-let calls;
-let failNext;
+let objects = new Map();
+let calls = [];
+let failNext = 0;
+const allowance = { exhausted: false, left: null };
 const bucket = {
   async head(key) {
     const o = objects.get(key);
@@ -133,6 +135,8 @@ const images = {
         return t;
       },
       async output() {
+        if (allowance.exhausted || allowance.left === 0) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
+        if (allowance.left !== null) allowance.left -= 1;
         if (failNext > 0) {
           failNext--;
           throw new Error('the images service is down');
@@ -147,17 +151,20 @@ const images = {
 
 let store;
 let editor;
-function reset() {
-  objects = new Map();
+function reset(photo = {}, initial = START(), keepBucket = false) {
+  if (!keepBucket) objects = new Map();
   calls = [];
   failNext = 0;
-  store = fakeStore({ initial: START() });
+  allowance.exhausted = false;
+  allowance.left = null;
+  store = fakeStore({ initial });
   editor = createEditor({
     uploads: { bucket, images },
-    content,
+    content: declare(photo),
     store,
     mode,
     keys,
+    uploads: { bucket, images },
     site: {
       fetchPage: async (path) =>
         path === '/' || path === '/other'
@@ -200,6 +207,32 @@ createServer(async (req, res) => {
     reset();
     return send(200, {});
   }
+  if (url.pathname === '/__test/uploads') {
+    // Starts over with rooms that hold uploaded photos (their originals are in the bucket) and a photo field as declared.
+    const { rooms, photo } = JSON.parse(body.toString());
+    objects = new Map();
+    const list = rooms.map(({ id, n, crop }) => {
+      const key = `2026/11/${String(n).padStart(24, 'a')}`;
+      objects.set(`originals/${key}`, { value: new Uint8Array([1]), customMetadata: { list: 'rooms', field: 'photo', width: '4000', height: '3000' } });
+      return { id, values: { title: id, photo: { key, alt: 'a room', width: 4000, height: 3000, ...(crop ? { crop } : {}) } } };
+    });
+    reset(photo, { texts: START().texts, lists: { rooms: list } }, true);
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/declare') {
+    // The site is deployed again with the photo field changed; the store and the bucket stay.
+    const keep = await store.read();
+    reset(JSON.parse(body.toString()), keep, true);
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/allowance') {
+    // { exhausted: true } now, or { left: n } after n more sizes, or { exhausted: false } to lift it.
+    const { exhausted = false, left = null } = JSON.parse(body.toString());
+    allowance.exhausted = exhausted;
+    allowance.left = left;
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/renditions') return send(200, [...objects.keys()].filter((k) => k.startsWith('renditions/')).sort());
   if (url.pathname === '/__test/other') {
     // Someone else edits a text behind the editor's back (always live, so the page is stale).
     const { key, text } = JSON.parse(body.toString());

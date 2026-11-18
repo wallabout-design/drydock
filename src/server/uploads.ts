@@ -5,6 +5,7 @@
 //
 //   POST /admin/api/uploads?list=<list>&field=<field>   the image itself; answers { key, width, height }
 //   POST /admin/api/uploads/renditions                   { key, list, field, crop?, width }: makes one size
+//   GET  /admin/api/uploads/missing?list=&offset=        which sizes the stored items need and lack (the rebuild page)
 //   serveMedia(request, bucket)                          GET /media/<key>/<crop>/<w>.webp, for the site's Worker
 //
 // The bucket and the images binding are described by the few methods used, so
@@ -12,6 +13,7 @@
 import { cropSegment, imageSources, renditionWidths } from '../core/image.js';
 import { LIMITS } from '../core/limits.js';
 import type { Content } from '../core/declare.js';
+import type { ListItem } from '../core/read.js';
 import type { ImageCrop, ImageField, ImageUpload, ItemValues, Problem } from '../core/types.js';
 import { checkCrop, UPLOAD_KEY } from '../core/validate.js';
 
@@ -141,7 +143,62 @@ function isAllowanceUsedUp(error: unknown): boolean {
   return e?.code === 9422 || (typeof e?.message === 'string' && e.message.includes('9422'));
 }
 
+/** One size to make: exactly the body of `POST /admin/api/uploads/renditions`, and the item it is for. */
+export interface RenditionTask {
+  item: string;
+  key: string;
+  list: string;
+  field: string;
+  crop: ImageCrop | null;
+  width: number;
+}
+/** An item the page can't rebuild by itself, with why. */
+export interface RenditionProblem {
+  item: string;
+  title: string;
+  field: string;
+  label: string;
+  kind: 'crop' | 'original';
+  message: string;
+}
+/** What one request of the rebuild page's check found, for a run of items from `offset`. */
+export interface MissingReport {
+  list: string;
+  /** Items in the list, and the index to ask for next (null when the list is done). */
+  items: number;
+  offset: number;
+  next: number | null;
+  /** Sizes the items in this run need, and those that are not made yet. */
+  needed: number;
+  missing: RenditionTask[];
+  problems: RenditionProblem[];
+}
+
+/**
+ * Heads one check request may spend: a Worker on the free plan makes at most
+ * 50 subrequests, and the request also reads the store. A run starts an item
+ * only when the item's most heads fit in what is left, except the run's first
+ * item, which it always checks so the page moves on.
+ */
+export const HEAD_BUDGET = 40;
+
+/**
+ * The most heads checking one item can take: per image field, the original,
+ * every declared width, and one more size (the original's own width when it is
+ * narrower than the widest, or the lightbox size when it is wider, never both).
+ */
+function mostHeads(fields: readonly ImageField[], values: ItemValues): number {
+  let heads = 0;
+  for (const field of fields) {
+    const value = values[field.name];
+    if (typeof value === 'object' && value !== null && 'key' in value) heads += 1 + (field.widths ?? LIMITS.image.defaultWidths).length + 1;
+  }
+  return heads;
+}
+
 export interface UploadRoutes {
+  /** Which sizes the items of a list need and lack, from `offset`, within a bounded number of heads. */
+  missing(list: string, items: readonly ListItem[], offset: number): Promise<MissingReport>;
   /** The upload route's work, after the caller has checked who is asking and where from. */
   upload(request: Request, query: URLSearchParams, now: Date): Promise<Response>;
   /** The renditions route's work, given the parsed JSON body. */
@@ -164,6 +221,49 @@ export function createUploadRoutes(content: Content, options: UploadsOptions, js
   const unknownField = (): Response => json(404, { error: 'unknown-field', message: 'This image field is no longer on the site. Reload the page.' });
 
   return {
+    async missing(listName, items, offset) {
+      const list = content.lists.get(listName);
+      const fields = (list?.fields ?? []).filter((f): f is ImageField => f.type === 'image');
+      const report: MissingReport = { list: listName, items: items.length, offset, next: null, needed: 0, missing: [], problems: [] };
+      let budget = HEAD_BUDGET;
+      let at = offset;
+      while (at < items.length) {
+        const item = items[at] as ListItem;
+        if (at > offset && mostHeads(fields, item.values) > budget) break;
+        at += 1;
+        const rawTitle = list ? item.values[list.titleField] : undefined;
+        const title = typeof rawTitle === 'string' && rawTitle !== '' ? rawTitle : item.id;
+        for (const field of fields) {
+          const value = item.values[field.name];
+          if (typeof value !== 'object' || !('key' in value)) continue;
+          const problem = (kind: RenditionProblem['kind'], message: string): number =>
+            report.problems.push({ item: item.id, title, field: field.name, label: field.label, kind, message });
+          budget -= 1;
+          const original = await readOriginal(bucket, value.key, listName, field.name);
+          if (!original) {
+            problem('original', `The original of ${field.label.toLowerCase()} is not in the bucket for this field. Choose the image again.`);
+            continue;
+          }
+          const checked = checkCrop(field, value.crop, original.width, original.height);
+          if ('problem' in checked) {
+            problem('crop', checked.problem.message);
+            continue;
+          }
+          const upload: ImageUpload = { key: value.key, alt: '', width: original.width, height: original.height, ...(checked.crop ? { crop: checked.crop } : {}) };
+          const sizes = renditionWidths(field, upload);
+          for (const width of [...sizes.widths, ...(sizes.full === undefined ? [] : [sizes.full])]) {
+            report.needed += 1;
+            budget -= 1;
+            if (!(await bucket.head(renditionKey(value.key, checked.crop, width)))) {
+              report.missing.push({ item: item.id, key: value.key, list: listName, field: field.name, crop: checked.crop ?? null, width });
+            }
+          }
+        }
+      }
+      report.next = at < items.length ? at : null;
+      return report;
+    },
+
     async upload(request, query, now) {
       const list = query.get('list');
       const field = query.get('field');

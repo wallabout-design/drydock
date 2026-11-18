@@ -577,3 +577,41 @@ body[data-editor-page] a {
 .wd-editor__dialog *::after {
   box-sizing: border-box;
 }
+
+/* The rebuild images page (/admin/images). */
+.wd-images__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+.wd-images__bar button {
+  padding: 6px 14px;
+  border: 1px solid var(--wd-editor-ink);
+  background: var(--wd-editor-paper);
+  color: var(--wd-editor-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.wd-images__bar button:disabled {
+  border-color: var(--wd-editor-line);
+  color: var(--wd-editor-line);
+  cursor: not-allowed;
+}
+.wd-images__status {
+  min-height: 1.5rem;
+}
+.wd-images__status[data-kind='problem'] {
+  color: var(--wd-editor-problem);
+  font-weight: 600;
+}
+.wd-images__status[data-kind='saved'] {
+  color: var(--wd-editor-saved);
+  font-weight: 600;
+}
+.wd-images__lists section {
+  border-top: 1px solid var(--wd-editor-line);
+}
+.wd-images__problems li {
+  margin: 4px 0;
+}

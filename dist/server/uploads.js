@@ -5,6 +5,7 @@
 //
 //   POST /admin/api/uploads?list=<list>&field=<field>   the image itself; answers { key, width, height }
 //   POST /admin/api/uploads/renditions                   { key, list, field, crop?, width }: makes one size
+//   GET  /admin/api/uploads/missing?list=&offset=        which sizes the stored items need and lack (the rebuild page)
 //   serveMedia(request, bucket)                          GET /media/<key>/<crop>/<w>.webp, for the site's Worker
 //
 // The bucket and the images binding are described by the few methods used, so
@@ -89,6 +90,27 @@ function isAllowanceUsedUp(error) {
     const e = error;
     return e?.code === 9422 || (typeof e?.message === 'string' && e.message.includes('9422'));
 }
+/**
+ * Heads one check request may spend: a Worker on the free plan makes at most
+ * 50 subrequests, and the request also reads the store. A run starts an item
+ * only when the item's most heads fit in what is left, except the run's first
+ * item, which it always checks so the page moves on.
+ */
+export const HEAD_BUDGET = 40;
+/**
+ * The most heads checking one item can take: per image field, the original,
+ * every declared width, and one more size (the original's own width when it is
+ * narrower than the widest, or the lightbox size when it is wider, never both).
+ */
+function mostHeads(fields, values) {
+    let heads = 0;
+    for (const field of fields) {
+        const value = values[field.name];
+        if (typeof value === 'object' && value !== null && 'key' in value)
+            heads += 1 + (field.widths ?? LIMITS.image.defaultWidths).length + 1;
+    }
+    return heads;
+}
 export function createUploadRoutes(content, options, json) {
     const { bucket, images } = options;
     const imageField = (list, field) => {
@@ -97,6 +119,49 @@ export function createUploadRoutes(content, options, json) {
     };
     const unknownField = () => json(404, { error: 'unknown-field', message: 'This image field is no longer on the site. Reload the page.' });
     return {
+        async missing(listName, items, offset) {
+            const list = content.lists.get(listName);
+            const fields = (list?.fields ?? []).filter((f) => f.type === 'image');
+            const report = { list: listName, items: items.length, offset, next: null, needed: 0, missing: [], problems: [] };
+            let budget = HEAD_BUDGET;
+            let at = offset;
+            while (at < items.length) {
+                const item = items[at];
+                if (at > offset && mostHeads(fields, item.values) > budget)
+                    break;
+                at += 1;
+                const rawTitle = list ? item.values[list.titleField] : undefined;
+                const title = typeof rawTitle === 'string' && rawTitle !== '' ? rawTitle : item.id;
+                for (const field of fields) {
+                    const value = item.values[field.name];
+                    if (typeof value !== 'object' || !('key' in value))
+                        continue;
+                    const problem = (kind, message) => report.problems.push({ item: item.id, title, field: field.name, label: field.label, kind, message });
+                    budget -= 1;
+                    const original = await readOriginal(bucket, value.key, listName, field.name);
+                    if (!original) {
+                        problem('original', `The original of ${field.label.toLowerCase()} is not in the bucket for this field. Choose the image again.`);
+                        continue;
+                    }
+                    const checked = checkCrop(field, value.crop, original.width, original.height);
+                    if ('problem' in checked) {
+                        problem('crop', checked.problem.message);
+                        continue;
+                    }
+                    const upload = { key: value.key, alt: '', width: original.width, height: original.height, ...(checked.crop ? { crop: checked.crop } : {}) };
+                    const sizes = renditionWidths(field, upload);
+                    for (const width of [...sizes.widths, ...(sizes.full === undefined ? [] : [sizes.full])]) {
+                        report.needed += 1;
+                        budget -= 1;
+                        if (!(await bucket.head(renditionKey(value.key, checked.crop, width)))) {
+                            report.missing.push({ item: item.id, key: value.key, list: listName, field: field.name, crop: checked.crop ?? null, width });
+                        }
+                    }
+                }
+            }
+            report.next = at < items.length ? at : null;
+            return report;
+        },
         async upload(request, query, now) {
             const list = query.get('list');
             const field = query.get('field');

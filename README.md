@@ -36,6 +36,10 @@ Things to know:
 - The form shows a chosen photo before it is uploaded from a `blob:` address. The list page allows that itself. On the edit view the form opens over the site's own page, so a site with a content security policy needs `blob:` in its `img-src` there (and `'self'`, for stored images), or the preview stays empty.
 - A preview deployment shows uploaded images only if its Worker can read the production bucket (bind the same bucket there).
 
+## Rebuild images
+
+Sizes are made when staff save an item. When a site later changes a field's `widths`, `full` or `aspect`, admins open `/admin/images` (only when `uploads` is given). For each list with an image field it counts the sizes the stored items need and those not made yet, and one button makes the missing ones from the browser, one request each, with a stop button. When the month's allowance is used up (429) it stops and keeps its place; a later visit finds what is still missing, so the run can be resumed next month. An item whose crop no longer fits a changed `aspect`, or whose original is gone, is listed with a link to its form (`/admin/lists/<name>?edit=<id>`), not guessed.
+
 ## Merge content edits
 
 With the git store in `auto` mode, a change is a pull request from a `content-edit/*` branch. A reusable workflow merges it once the tests pass, but only if every changed file is under `content/` and is the texts file or an item of a declared list, every changed value passes the site's rules again, and the `test` check passed. Anything else gets the label `status:needs-human-review` and a comment saying why. In `review` mode it does nothing.
