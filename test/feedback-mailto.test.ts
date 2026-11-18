@@ -1,6 +1,6 @@
 // Unit tests for the mailto: builder (no browser).
-import { test, expect } from '@playwright/test';
-import { FEEDBACK_ADDRESS, MAX_SELECTION, feedbackId, feedbackMailto, roundDpr, type FeedbackContext } from '../dist/index.js';
+import { test, expect } from 'vitest';
+import { FEEDBACK_ADDRESS, MAX_SELECTION, feedbackId, feedbackMailto, roundDpr, type FeedbackContext } from '../src/feedback/index.js';
 
 const context: FeedbackContext = {
   url: 'https://example.com/stay?x=1',

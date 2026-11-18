@@ -1,4 +1,4 @@
-import { initFeedbackLink } from '/dist/index.js';
+import { initFeedbackLink } from '/dist/feedback/index.js';
 
 const options = { siteId: 'test' };
 const address = new URLSearchParams(location.search).get('address');

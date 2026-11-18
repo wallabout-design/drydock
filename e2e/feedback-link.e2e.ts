@@ -1,8 +1,12 @@
 // initFeedbackLink on a fixture page (ported from wallabout-design/site, tests/feedback.spec.ts).
 import { test, expect, type Page } from '@playwright/test';
+import { FEEDBACK } from './ports.js';
+
+// The feedback fixture pages have their own static server (e2e/feedback-server.mjs).
+test.use({ baseURL: FEEDBACK });
 
 const link = (page: Page) => page.getByRole('link', { name: 'send feedback' });
-const fixture = (name: string, query = '') => `/test/fixture/${name}.html${query}`;
+const fixture = (name: string, query = '') => `/e2e/feedback-fixture/${name}.html${query}`;
 
 test.beforeEach(({ page }) => {
   page.on('console', (m) => {
@@ -58,7 +62,7 @@ test('the email names the site, page, viewport and build', async ({ page }) => {
   const mail = new URL((await link(page).getAttribute('href'))!);
   expect(mail.protocol).toBe('mailto:');
   expect(mail.pathname).toBe('feedback@wallabout.design');
-  expect(mail.searchParams.get('subject')).toMatch(/^\[test\] \/test\/fixture\/about\.html #[2-9a-hjkmnp-z]{4}$/);
+  expect(mail.searchParams.get('subject')).toMatch(/^\[test\] \/e2e\/feedback-fixture\/about\.html #[2-9a-hjkmnp-z]{4}$/);
   const body = mail.searchParams.get('body')!;
   expect(body).toContain('url: ' + page.url());
   expect(body).toMatch(/viewport: 390x844 @\d+(\.\d{1,2})?x\r\n/);

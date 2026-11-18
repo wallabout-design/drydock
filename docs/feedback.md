@@ -1,13 +1,13 @@
 # feedback
 
-Hidden "send feedback" link for wallabout sites: a prefilled email with the page, viewport, build and highlighted text.
+Hidden "send feedback" link for wallabout sites: a prefilled email with the page, viewport, build and highlighted text. Exported from `@wallabout-design/drydock/feedback` (it was the separate package `@wallabout-design/feedback` up to v0.3.0).
 
 Ordinary visitors never see it. A visit with `?feedback` turns it on for that browser (stored as `localStorage` `feedback=1`), and `?feedback=off` turns it off (so do `0`, `false` and `no`; any other value turns it on). The link is a `mailto:` to `feedback@wallabout.design` with the subject `[<siteId>] <path> #<id>`, where `<id>` is a fresh 4-character code on each click (no look-alike characters), so every note gets its own thread in the inbox and can be named in a reply. It quotes any highlighted text (up to 500 characters, and still counted for 3 s after the selection clears) and adds the URL, viewport, device pixel ratio, browser and build (from `<meta name="build">`). Nothing is sent until the reviewer sends the email. The feedback routine is described in `standards/feedback.md` in `wallabout-design/standards`.
 
 ## install
 
 ```sh
-npm install github:wallabout-design/feedback#v0.3.0
+npm install github:wallabout-design/drydock#vX.Y.Z
 ```
 
 ## use
@@ -19,7 +19,7 @@ Any site, from a bundled script (not an inline one, so a CSP that blocks inline 
 ```
 
 ```ts
-import { initFeedbackLink } from '@wallabout-design/feedback';
+import { initFeedbackLink } from '@wallabout-design/drydock/feedback';
 
 const link = document.querySelector<HTMLAnchorElement>('[data-feedback-link]');
 if (link) initFeedbackLink(link, { siteId: 'wallabout' });
@@ -32,7 +32,7 @@ The link opens the mail app from the same tab. Don't give it `target="_blank"`: 
 React (React is an optional peer dependency):
 
 ```tsx
-import { FeedbackLink } from '@wallabout-design/feedback/react';
+import { FeedbackLink } from '@wallabout-design/drydock/feedback/react';
 
 <FeedbackLink siteId="rr" className="feedback-link" />;
 ```
@@ -44,43 +44,13 @@ It renders `<a hidden data-feedback-link>send feedback</a>` and calls `initFeedb
 The package ships no styles for the link itself. Sites usually fix it at the bottom right of the viewport, where it covers whatever the footer has in that corner once you scroll to the bottom. Import the optional `reserve.css` to keep that corner clear:
 
 ```ts
-import '@wallabout-design/feedback/reserve.css';
+import '@wallabout-design/drydock/feedback/reserve.css';
 ```
 
 While the link is shown (any `[data-feedback-link]` without `hidden`, which both the plain markup and `FeedbackLink` render), it pads the bottom of `<body>` by `--feedback-reserve`, 64px by default: the link's height plus its offset from the bottom. If the site's link is taller or sits higher, set the variable, for example `:root { --feedback-reserve: 80px; }`. Ordinary visitors never see the link, so their pages are unchanged.
 
 Import it whenever the link is fixed over the page. The rule keys on the `hidden` attribute, so keep `[hidden] { display: none }` working: if the site's link styles set `display`, add that rule too, or the link shows for every visitor while no space is reserved.
 
-## why built JS from a git tag
-
-Sites install a tag from GitHub, with no registry and no token (the repo is public). npm installs a git dependency as it is, unless the package has a `prepare` script, in which case npm installs its dev dependencies and builds it on every site's `npm ci`. That is slow, and rr only allows install scripts it lists. TypeScript source wouldn't work either, because Node won't strip types inside `node_modules` for a server render.
-
-So `dist/` (plain ES modules and `.d.ts` files, built by `tsc`) is committed, and CI fails if it doesn't match `src/`. Sites need no build step for this package: Astro (site) and React Router with Vite (rr) bundle `dist/` like any other dependency.
-
 ## develop
 
-Node 24 (`.nvmrc`).
-
-- `npm run build`: compile `src/` to `dist/` and copy `src/reserve.css` there. Commit `dist/` with the change.
-- `npm run check`: type check the source and tests.
-- `npm run verify`: everything CI runs, in one command: `check`, `scan:secrets`, `scan:deps`, then `npm test`. Run it before pushing. The scans need `brew install gitleaks osv-scanner` first (see Scans below).
-- `npm test`: build, then `npm run test:unit` (`test/mailto.spec.ts`, `test/react.spec.ts` and `test/tag-check.spec.ts`: no server, no browser) and `npm run test:e2e` (`test/link.spec.ts` on fixture pages, in Chromium and WebKit; first run `npx playwright install chromium webkit`).
-- Tests follow `standards/testing.md` in `wallabout-design/standards`. To check for flaky tests: `gh workflow run burn-in.yml -f runs=10`.
-
-## Scans
-
-`npm run verify` also runs two security scans, and CI's `scan` job runs the same commands:
-
-- `npm run scan:secrets`: `gitleaks` over the commits your branch adds to `origin/main`. A false alarm goes in `.gitleaksignore`, with a comment saying what it is.
-- `npm run scan:deps`: `osv-scanner` over `package-lock.json`. It fails on a vulnerability rated high or critical (CVSS 7.0 or more) or with no rating. An ignore goes in `osv-scanner.toml` with a reason and an end date.
-
-Install both tools locally with `brew install gitleaks osv-scanner`. CI installs release binaries at the exact versions in `scripts/ci-install-scan-tools.sh` and checks their SHA-256 first.
-
-## release
-
-1. Merge the change to `main` (PR, squash; `main` is protected).
-2. Bump `version` in `package.json` in that PR.
-3. Run `npm run release`. It reads `version` from `package.json`, checks the tag doesn't exist and CI on `origin/main` is green, makes an **annotated** tag on `origin/main`, checks `git cat-file -t` prints `tag`, pushes it and runs `gh release create --verify-tag --generate-notes`. `npm run release -- --dry-run` does the checks and stops before tagging.
-
-   Don't use a plain `git tag vX.Y.Z`, and don't let `gh release create` make the tag itself: both make a lightweight tag. Dependabot missed the lightweight `v0.2.0` and opened site#99 to "bump" sites from v0.2.0 back down to v0.1.0. As a safety net, `.github/workflows/tag-check.yml` fails when a pushed `v*` tag is lightweight or doesn't match `package.json`; if it does, delete the tag (`git push origin :refs/tags/vX.Y.Z`) and run `npm run release`.
-4. In each site, install the new tag. Dependabot also opens a PR for it within the week.
+Feedback's tests run with the rest of the package (`npm run verify`, see `AGENTS.md`): `test/feedback-mailto.test.ts` and `test/feedback-react.test.ts` in the unit run, and `e2e/feedback-link.e2e.ts` in the browser run, on the fixture pages in `e2e/feedback-fixture/` served by `e2e/feedback-server.mjs` with a CSP that blocks inline scripts.

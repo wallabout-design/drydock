@@ -1,14 +1,30 @@
-# editor
+# drydock
 
-`@wallabout-design/editor` is the client-side editor for [wallabout design](https://wallabout.design) sites. Staff use it to edit the texts and lists on their own site.
+`@wallabout-design/drydock` is the on-site toolkit for [wallabout design](https://wallabout.design) sites. It has two features, each with its own permissions:
 
-The package is in progress: the build, tests and release are in place, and the editing features are being built. Sites install it by tag:
+- **Editing** (the package root, `./server`, `./react`, `./astro`): signed-in staff edit the texts and lists on their own site. The design is `standards/content-editing.md` in `wallabout-design/standards`.
+- **Feedback** (`./feedback`, `./feedback/react`, `./feedback/reserve.css`): a hidden "send feedback" link for reviewers who opt in with `?feedback`. See [`docs/feedback.md`](docs/feedback.md); the design is `standards/feedback.md`.
+
+The plan for both (one panel, pluggable stores and feedback delivery) is `standards/drydock.md`.
+
+drydock was `wallabout-design/editor` up to v0.3.0; `wallabout-design/feedback` (up to its v0.3.0) was merged in with its history. Sites install it by tag:
 
 ```sh
-npm install github:wallabout-design/editor#v0.3.0
+npm install github:wallabout-design/drydock#vX.Y.Z
 ```
 
-Licensed under the MIT licence (see `LICENSE`). The design is `standards/content-editing.md` in `wallabout-design/standards`.
+A page that imports only `@wallabout-design/drydock/feedback` bundles none of the editing code: the entry points are separate and the package has no side effects.
+
+Licensed under the MIT licence (see `LICENSE`).
+
+## Moving a site from `editor` and `feedback`
+
+The code is the same as editor v0.3.0 and feedback v0.3.0; only the names change. In one PR per site:
+
+1. In `package.json`, replace `@wallabout-design/editor` and `@wallabout-design/feedback` with `"@wallabout-design/drydock": "github:wallabout-design/drydock#vX.Y.Z"`.
+2. Rename imports: `@wallabout-design/editor…` becomes `@wallabout-design/drydock…` (the subpaths are the same), `@wallabout-design/feedback` becomes `@wallabout-design/drydock/feedback`, and `@wallabout-design/feedback/react` and `/reserve.css` move under `@wallabout-design/drydock/feedback/`.
+3. Change the content type's `declare module '@wallabout-design/editor'` to `declare module '@wallabout-design/drydock'`, or every key is a plain `string` again.
+4. In `.github/workflows/content-merge.yml`, use `wallabout-design/drydock/.github/workflows/content-merge.yml@vX.Y.Z`, with the same tag as the package.
 
 ## Scans
 
@@ -21,7 +37,7 @@ Install both tools locally with `brew install gitleaks osv-scanner`. CI installs
 
 ## D1 store
 
-`d1Store(db, { content })` from `@wallabout-design/editor/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/editor/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
+`d1Store(db, { content })` from `@wallabout-design/drydock/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/drydock/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
 
 ## Uploaded images
 
@@ -35,7 +51,7 @@ An image field can hold an upload. The original is kept untouched in the site's 
    ```
 
 2. Give the editor both: `createEditor({ …, uploads: { bucket: env.MEDIA, images: env.IMAGES } })`. Without `uploads`, an item holding an uploaded image is refused on save with a message saying so.
-3. Let the Worker answer the site's media paths, before anything else answers them: `if (pathname.startsWith('/media/')) return serveMedia(request, env.MEDIA)` (`serveMedia` is exported from `@wallabout-design/editor/server`). `/media/*` must reach the Worker, so it must not be left to static assets (add it to `run_worker_first`). It only reads `renditions/…`, never transforms, and answers 404 for anything else, every `originals/` path included.
+3. Let the Worker answer the site's media paths, before anything else answers them: `if (pathname.startsWith('/media/')) return serveMedia(request, env.MEDIA)` (`serveMedia` is exported from `@wallabout-design/drydock/server`). `/media/*` must reach the Worker, so it must not be left to static assets (add it to `run_worker_first`). It only reads `renditions/…`, never transforms, and answers 404 for anything else, every `originals/` path included.
 
 Things to know:
 
@@ -69,7 +85,7 @@ permissions:
   issues: write
 jobs:
   merge:
-    uses: wallabout-design/editor/.github/workflows/content-merge.yml@vX.Y.Z # the tag the site installs
+    uses: wallabout-design/drydock/.github/workflows/content-merge.yml@vX.Y.Z # the tag the site installs
     with:
       mode: auto # the same mode as the editor's `mode` setting
       declaration: src/content.ts # exports the result of defineContent as `content`

@@ -1,9 +1,9 @@
 // The React component's markup (server render, no browser). Its behaviour is
-// initFeedbackLink's, covered by link.spec.ts.
-import { test, expect } from '@playwright/test';
+// initFeedbackLink's, covered by e2e/feedback-link.e2e.ts.
+import { test, expect } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { FeedbackLink } from '../dist/react.js';
+import { FeedbackLink } from '../src/feedback/react.js';
 
 test('renders a hidden link marked data-feedback-link, like the plain markup', () => {
   const html = renderToStaticMarkup(createElement(FeedbackLink, { siteId: 'rr', className: 'feedback' }));

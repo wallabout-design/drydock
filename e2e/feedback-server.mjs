@@ -10,6 +10,8 @@ const port = Number(process.argv[2] ?? 4322);
 
 createServer(async (req, res) => {
   const path = normalize(new URL(req.url, 'http://x').pathname);
+  // Full Chrome (CHROMIUM_PATH) asks for a favicon, and a 404 is a console error the tests fail on.
+  if (path === '/favicon.ico') return res.writeHead(204).end();
   try {
     const body = await readFile(join(root, path));
     res.writeHead(200, {

@@ -6,7 +6,7 @@ import type { ContentDeclaration, ItemValues } from './types.js';
 /**
  * A site makes its keys known to the types by merging its content in once:
  *
- *     declare module '@wallabout-design/editor' {
+ *     declare module '@wallabout-design/drydock' {
  *       interface Register { content: typeof content }
  *     }
  *

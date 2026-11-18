@@ -43,9 +43,9 @@ on:
         type: string
         default: ''
       editor-path:
-        description: 'Where the editor package is, after npm ci.'
+        description: 'Where the drydock package is, after npm ci.'
         type: string
-        default: node_modules/@wallabout-design/editor
+        default: node_modules/@wallabout-design/drydock
       head-sha:
         description: 'Check this commit, for a run started by hand. Default: the commit ci tested.'
         type: string
