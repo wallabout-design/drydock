@@ -1,0 +1,4 @@
+export { initDock, SECTION_ORDER } from './dock.js';
+export type { DockOptions, DockSection } from './dock.js';
+export { feedbackSection } from './feedback-section.js';
+export type { FeedbackOptions } from '../feedback/mailto.js';

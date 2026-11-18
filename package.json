@@ -57,10 +57,19 @@
       "types": "./dist/feedback/react.d.ts",
       "default": "./dist/feedback/react.js"
     },
-    "./feedback/reserve.css": "./dist/feedback/reserve.css"
+    "./feedback/reserve.css": "./dist/feedback/reserve.css",
+    "./dock": {
+      "types": "./dist/dock/index.d.ts",
+      "default": "./dist/dock/index.js"
+    },
+    "./dock/react": {
+      "types": "./dist/dock/react.d.ts",
+      "default": "./dist/dock/react.js"
+    },
+    "./dock.css": "./dist/dock/dock.css"
   },
   "scripts": {
-    "build": "node scripts/build-assets.mjs && rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/ && cp src/editor/*.js src/editor/editor.css dist/ && cp src/feedback/reserve.css dist/feedback/",
+    "build": "node scripts/build-assets.mjs && rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/ && cp src/editor/*.js src/editor/editor.css dist/ && cp src/feedback/reserve.css dist/feedback/ && cp src/dock/dock.css dist/dock/",
     "check": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "playwright test",

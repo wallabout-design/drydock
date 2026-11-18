@@ -5,3 +5,4 @@ export type { FeedbackCapture } from './capture.js';
 export { mailtoTransport } from './transports.js';
 export type { LinkTransport, Transport } from './transports.js';
 export { initFeedbackLink } from './link.js';
+export { feedbackEnabled } from './optin.js';

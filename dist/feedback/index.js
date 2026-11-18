@@ -2,3 +2,4 @@ export { FEEDBACK_ADDRESS, MAX_SELECTION, feedbackId, feedbackMailto, roundDpr }
 export { captureContext } from './capture.js';
 export { mailtoTransport } from './transports.js';
 export { initFeedbackLink } from './link.js';
+export { feedbackEnabled } from './optin.js';

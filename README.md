@@ -3,6 +3,7 @@
 `@wallabout-design/drydock` is the on-site toolkit for [wallabout design](https://wallabout.design) sites. It has two features, each with its own permissions:
 
 - **Editing** (the package root, `./server`, `./react`, `./astro`): signed-in staff edit the texts and lists on their own site. The design is `standards/content-editing.md` in `wallabout-design/standards`.
+- **Dock** (`./dock`, `./dock/react`, `./dock.css`): one launcher and panel at the bottom right, with a section for each feature. It ships with the feedback section on the `mailto:` transport, shown after `?feedback`; nothing runs at import, and ordinary visitors see and request nothing. Theme it with CSS variables (`--dock-bg`, `--dock-fg`, `--dock-border`, `--dock-font`, `--dock-offset`, `--dock-z`); `--dock-reserve` pads the page bottom while the launcher shows (`--feedback-reserve` is the fallback until 1.0). The design is `standards/drydock.md`, "the dock".
 - **Feedback** (`./feedback`, `./feedback/react`, `./feedback/reserve.css`): a hidden "send feedback" link for reviewers who opt in with `?feedback`. See [`docs/feedback.md`](docs/feedback.md); the design is `standards/feedback.md`.
 
 The plan for both (one panel, pluggable stores and feedback delivery) is `standards/drydock.md`.
