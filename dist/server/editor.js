@@ -2,6 +2,8 @@ import { can, identify } from './access.js';
 import { orderItems } from '../core/read.js';
 import { createUploadRoutes, MAX_UPLOAD_BYTES, uploadsNotSetUp } from './uploads.js';
 import { EDITOR_CSS, EDITOR_JS, IMAGES_PAGE_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
+/** The most pages `me()` reads when counting waiting changes. */
+const ME_MAX_PAGES = 50;
 export const MAX_BODY_BYTES = 64 * 1024;
 const NO_STORE = { 'cache-control': 'no-store' };
 /** When an accepted change is live, in the words the pages use. The store says which (StoreCapabilities.goesLive). */
@@ -478,12 +480,17 @@ export function createEditor(options) {
             return wrongMethod('GET');
         let waiting = 0;
         if (can(identity, 'approve')) {
+            // The count is only a hint, so a store that repeats a cursor or never ends stops the loop early.
+            const seen = new Set();
             let cursor;
-            do {
+            for (let pages = 0; pages < ME_MAX_PAGES; pages++) {
                 const page = await store.list(cursor === undefined ? { state: 'waiting' } : { state: 'waiting', cursor });
                 waiting += page.changes.length;
                 cursor = page.next ?? undefined;
-            } while (cursor !== undefined);
+                if (cursor === undefined || seen.has(cursor))
+                    break;
+                seen.add(cursor);
+            }
         }
         return json(200, { email: identity.email, role: identity.role, waiting });
     }

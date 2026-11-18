@@ -1,5 +1,5 @@
 import { exportJWK, generateKeyPair, SignJWT, type JWTVerifyGetKey } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { defineContent, fakeStore, type Store } from '../src/index.js';
 import { ACCESS_HEADER, createEditor, type AccessEnv, type Editor, type EditorSite } from '../src/server/index.js';
 
@@ -374,6 +374,27 @@ describe('GET /admin/api/me, the dock’s staff hint', () => {
   it('gives an admin a count of 0 when nothing waits', async () => {
     const { editor } = make('auto');
     expect(await (await call(editor, 'admin', 'GET', '/admin/api/me'))!.json()).toEqual({ email: 'boss@example.com', role: 'admin', waiting: 0 });
+  });
+
+  it('stops when a store keeps returning the same cursor, and still answers with the count so far', async () => {
+    const { store } = make('auto');
+    const list = vi.fn(async () => ({ changes: [{}], next: 'same' }) as unknown as Awaited<ReturnType<Store['list']>>);
+    const editor = createEditor({ content, store: { ...store, list } as Store, mode: 'auto', site: { fetchPage: async () => new Response('no', { status: 404 }) }, keys, now: () => NOW });
+    const res = (await call(editor, 'admin', 'GET', '/admin/api/me'))!;
+    expect(res.status).toBe(200);
+    expect((await res.json() as { waiting: number }).waiting).toBe(2);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops after a fixed number of pages when a store never ends', async () => {
+    const { store } = make('auto');
+    let n = 0;
+    const list = vi.fn(async () => ({ changes: [{}], next: `c${n++}` }) as unknown as Awaited<ReturnType<Store['list']>>);
+    const editor = createEditor({ content, store: { ...store, list } as Store, mode: 'auto', site: { fetchPage: async () => new Response('no', { status: 404 }) }, keys, now: () => NOW });
+    const res = (await call(editor, 'admin', 'GET', '/admin/api/me'))!;
+    expect(res.status).toBe(200);
+    expect((await res.json() as { waiting: number }).waiting).toBe(50);
+    expect(list).toHaveBeenCalledTimes(50);
   });
 
   it('refuses a method other than GET', async () => {
