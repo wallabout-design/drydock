@@ -1,15 +1,20 @@
 // The fixture site the browser tests run against: one public page with texts
 // marked data-copy, the editor (built into dist/) over the in-memory store, and
 // a few /__test routes to look at the store and to play "someone else".
-// Usage: node e2e/server.mjs <port> <auto|review>
+// Usage: node e2e/server.mjs <port> <auto|review> [memory|d1|git]
+// The store is the in-memory one unless named: `d1` is the D1 store on SQLite, and `git`
+// the git store over an in-memory repository, whose pull requests never merge (so a save
+// stays waiting, as it does while the checks run).
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
-import { ACCESS_HEADER, createEditor, serveMedia } from '../dist/server/index.js';
+import { ACCESS_HEADER, createEditor, d1Store, fakeRepo, gitStore, renderContentFiles, serveMedia } from '../dist/server/index.js';
+import { fixtureD1 } from './d1-fixture.mjs';
 
 const port = Number(process.argv[2]);
 const mode = process.argv[3] === 'review' ? 'review' : 'auto';
+const kind = ['d1', 'git'].includes(process.argv[4]) ? process.argv[4] : 'memory';
 
 const TEAM = 'fixture.cloudflareaccess.com';
 const AUD = 'fixture-aud';
@@ -154,16 +159,23 @@ const images = {
 
 let store;
 let editor;
+/** The store of this server's kind, holding `initial`. */
+function makeStore(initial, content) {
+  if (kind === 'd1') return d1Store(fixtureD1(structuredClone(initial)), { content });
+  if (kind === 'git') return gitStore({ repo: fakeRepo(renderContentFiles(content, structuredClone(initial)).files), content, config: { site: 'fixture.example' } });
+  return fakeStore({ initial });
+}
 function reset(photo = {}, initial = START(), keepBucket = false) {
   if (!keepBucket) objects = new Map();
   calls = [];
   failNext = 0;
   allowance.exhausted = false;
   allowance.left = null;
-  store = fakeStore({ initial });
+  const content = declare(photo);
+  store = makeStore(initial, content);
   editor = createEditor({
     uploads: { bucket, images },
-    content: declare(photo),
+    content,
     store,
     mode,
     keys,

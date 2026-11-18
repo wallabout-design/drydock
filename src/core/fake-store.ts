@@ -23,6 +23,9 @@ export function fakeStore(options: FakeStoreOptions = {}): Store {
   const find = (id: string): Change | undefined => changes.find((c) => c.id === id);
 
   return {
+    // The history is declared as 50, as the D1 store keeps; this store does not trim its list.
+    capabilities: { goesLive: 'at-once', history: 50 },
+
     async read() {
       return copy(content);
     },

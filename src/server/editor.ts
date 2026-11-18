@@ -61,6 +61,12 @@ export interface Editor {
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
+/** When an accepted change is live, in the words the pages use. The store says which (StoreCapabilities.goesLive). */
+const WHEN_LIVE = {
+  'at-once': { changes: 'changes go live on their own', listPage: 'What you save here is on the site straight away.' },
+  'after-checks': { changes: 'changes go live in a few minutes, after checks', listPage: 'What you save here is live in a few minutes, after checks.' },
+} as const;
+
 const json = (status: number, body: Record<string, unknown>): Response =>
   Response.json(body, { status, headers: NO_STORE });
 
@@ -135,6 +141,7 @@ function describeOp(content: Content, o: Operation): string {
 
 export function createEditor(options: EditorOptions): Editor {
   const { content, store, mode, site } = options;
+  const when = WHEN_LIVE[store.capabilities.goesLive];
 
   const uploads = options.uploads ? createUploadRoutes(content, options.uploads, json) : null;
   /** What the item form needs to offer a file picker: absent when the site has no `uploads`. */
@@ -348,6 +355,7 @@ export function createEditor(options: EditorOptions): Editor {
       editor: identity.email,
       role: identity.role,
       mode,
+      capabilities: store.capabilities,
       page,
       api: '/admin/api/changes',
       check: '/admin/api/check',
@@ -392,6 +400,7 @@ export function createEditor(options: EditorOptions): Editor {
       editor: identity.email,
       role: identity.role,
       mode,
+      capabilities: store.capabilities,
       api: '/admin/api/changes',
       check: '/admin/api/check',
       changesPage: '/admin/changes',
@@ -414,7 +423,7 @@ export function createEditor(options: EditorOptions): Editor {
       '<link rel="stylesheet" href="/admin/editor.css"></head><body data-editor-page="list"><main class="wd-page">' +
       `<p class="wd-page__nav"><a href="/admin/edit">back to editing</a> · <a href="/admin/changes">changes</a></p>` +
       `<h1>Edit ${escapeHtml(list.label)}</h1>` +
-      `<p>${mode === 'review' ? 'What you save here waits for an admin to approve it, then it appears on the site.' : 'What you save here is on the site straight away.'}</p>` +
+      `<p>${mode === 'review' ? 'What you save here waits for an admin to approve it, then it appears on the site.' : when.listPage}</p>` +
       '<div id="wd-list" class="wd-list"><noscript><p>This page needs JavaScript to edit the list.</p></noscript></div></main>' +
       `<script type="application/json" id="editor-settings">${data}</script><script type="module" src="/admin/list-page.js"></script></body></html>`;
     return new Response(request.method === 'HEAD' ? null : page, {
@@ -490,7 +499,7 @@ export function createEditor(options: EditorOptions): Editor {
     const page =
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<meta name="robots" content="noindex, nofollow"><title>changes</title></head><body><main><h1>changes</h1>' +
-      `<p><a href="/admin/edit">back to editing</a> · ${mode === 'review' ? 'changes wait for an admin to approve them' : 'changes go live on their own'}</p>` +
+      `<p><a href="/admin/edit">back to editing</a> · ${mode === 'review' ? 'changes wait for an admin to approve them' : when.changes}</p>` +
       section('waiting', waiting.changes, (c) => (mayApprove ? button(c, 'approve') + button(c, 'reject') : '')) +
       section('recent', live.changes, (c) => (mayUndo ? button(c, 'undo') : '')) +
       section('undone', undone.changes, () => '') +

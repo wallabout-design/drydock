@@ -321,6 +321,8 @@ export function gitStore(options) {
         return { changes, next: matching.length > limit && last ? String(last.number) : null };
     }
     return {
+        // A change is a pull request: it goes live once the merge workflow has run the tests. Git keeps every commit.
+        capabilities: { goesLive: 'after-checks', history: 'all' },
         async read() {
             return (await loadAt(await baseTip())).state;
         },

@@ -19,6 +19,14 @@
       "types": "./dist/server/index.d.ts",
       "default": "./dist/server/index.js"
     },
+    "./stores/d1": {
+      "types": "./dist/stores/d1/index.d.ts",
+      "default": "./dist/stores/d1/index.js"
+    },
+    "./stores/git": {
+      "types": "./dist/stores/git/index.d.ts",
+      "default": "./dist/stores/git/index.js"
+    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "default": "./dist/react/index.js"
