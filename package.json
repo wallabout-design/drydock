@@ -1,6 +1,6 @@
 {
   "name": "@wallabout-design/drydock",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Drydock for wallabout sites: staff edit texts and lists on their own site, and reviewers send feedback from any page",
   "license": "MIT",
   "repository": "github:wallabout-design/drydock",
