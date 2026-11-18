@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { nextControl } from './keys.js';
 import { AUTO, REVIEW } from './ports.js';
 
 // The text editor in a real browser, against the fixture site in server.mjs.
@@ -269,7 +270,7 @@ test.describe('changes go live on their own', () => {
     const focusOn = async (selector: string) => {
       for (let presses = 0; presses < 20; presses++) {
         if (await page.evaluate((sel) => document.activeElement?.matches(sel) ?? false, selector)) return;
-        await page.keyboard.press('Tab');
+        await nextControl(page);
       }
       throw new Error(`never reached ${selector} with Tab`);
     };
