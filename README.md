@@ -37,7 +37,9 @@ Install both tools locally with `brew install gitleaks osv-scanner`. CI installs
 
 ## D1 store
 
-`d1Store(db, { content })` from `@wallabout-design/drydock/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/drydock/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
+`d1Store(db, { content })` from `@wallabout-design/drydock/stores/d1` keeps content in a site's D1. Copy `node_modules/@wallabout-design/drydock/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
+
+The git store loads the same way, from `@wallabout-design/drydock/stores/git`. Each store has its own entry point, so a D1 site's Worker doesn't bundle the GitHub client. `./server` still re-exports both until 1.0.
 
 ## Writing a store
 
