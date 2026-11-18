@@ -20,3 +20,19 @@ export {
   type MediaObjectBody,
   type UploadsOptions,
 } from './uploads.js';
+export {
+  createFeedback,
+  isFeedbackPath,
+  memoryLimiter,
+  MAX_NOTE_BODY_BYTES,
+  MAX_NOTE_CHARACTERS,
+  MAX_NOTES_PER_HOUR,
+  type Feedback,
+  type FeedbackOptions,
+  type Note,
+  type NoteContext,
+  type NoteLimiter,
+  type Sender,
+  type Sink,
+  type SinkResult,
+} from './feedback.js';

@@ -25,7 +25,14 @@ export interface IdentifyOptions {
     keys?: JWTVerifyGetKey;
     now?: Date;
 }
+export declare const emails: (list: string | undefined) => string[];
 /** The signed-in person and their role, or null. */
 export declare function identify(request: Request, env: AccessEnv, options?: IdentifyOptions): Promise<Identity | null>;
+/**
+ * The email in a valid Access token, lowercased, or null. Checks the signature, the team
+ * domain and the audience tag, and does not look at any list: the caller decides who may.
+ * With a setting missing there is no valid token.
+ */
+export declare function accessEmail(request: Request, env: AccessEnv, options?: IdentifyOptions): Promise<string | null>;
 /** Whether this person may do this. An admin may do everything an editor may. */
 export declare function can(identity: Identity | null, action: Action): boolean;
