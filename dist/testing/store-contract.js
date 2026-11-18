@@ -30,6 +30,11 @@ export function storeContract(makeStore) {
             const store = await start();
             expect(await store.read()).toEqual(INITIAL);
         });
+        it('says what it does with a change: when it goes live, and how much history it keeps', async () => {
+            const { capabilities } = await start();
+            expect(['at-once', 'after-checks']).toContain(capabilities.goesLive);
+            expect(capabilities.history === 'all' || (Number.isInteger(capabilities.history) && capabilities.history > 0)).toBe(true);
+        });
         it('an auto change goes live at once', async () => {
             const store = await start();
             const change = changeOf(await store.submit({ ops: [setText('home.title', 'Hello', 'Hi')], by: 'ana' }, 'auto'));

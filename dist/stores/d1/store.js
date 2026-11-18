@@ -196,6 +196,7 @@ export function d1Store(db, options = {}) {
     const stale = (loaded, index) => refuse({ reason: 'stale', index, current: structuredClone(loaded.state) });
     const refusalOf = (applied, loaded) => applied.reason === 'stale' ? stale(loaded, applied.index) : refuse({ reason: 'invalid', message: applied.message });
     return {
+        capabilities: { goesLive: 'at-once', history: HISTORY_KEPT },
         async read() {
             return (await load()).state;
         },

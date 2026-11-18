@@ -8,6 +8,8 @@ import { createItemForm } from '/admin/item-form.js';
 const settings = JSON.parse(document.getElementById('editor-settings')?.textContent ?? '{}');
 const { list } = settings;
 const review = settings.mode === 'review';
+// When a saved change is live, as the store says (settings.capabilities.goesLive, see StoreCapabilities).
+const liveLine = settings.capabilities?.goesLive === 'after-checks' ? 'It’s live in a few minutes, after checks.' : 'It’s on the site now.';
 const byHand = list.sort === 'hand';
 let items = settings.items;
 let lastChange = null; // { id } of the last change that went live, for "undo"
@@ -157,7 +159,8 @@ async function post(url, body) {
 async function submit(ops) {
   const { status: code, body } = await post(settings.api, { ops });
   if (code === 200 && body.change) {
-    if (review) {
+    // Waiting (an admin's approval, or the store's checks) is not on the site yet: nothing is applied or undone.
+    if (review || body.change.state === 'waiting') {
       lastChange = null;
     } else {
       apply(body.change.ops);
@@ -181,7 +184,7 @@ async function submit(ops) {
 /** What staff are told once a change has been sent and accepted. */
 function saved(done) {
   if (review) return say(`${done} It will appear on the site once an admin approves it.`, 'saved');
-  say(`${done} It’s on the site now.`, 'saved', { undo: true });
+  say(`${done} ${liveLine}`, 'saved', { undo: lastChange !== null });
 }
 
 /** An action outside the form: a refusal goes to the status line. */
@@ -220,7 +223,7 @@ function openForm(item) {
       if (!result.ok) return result;
       const title = titleOf(ops[0].values);
       // What the server kept is what is shown, so the message names the cleaned title.
-      closeForm(item ? { item: item.id, action: 'edit' } : { item: review ? null : ops[0].id, action: 'edit' });
+      closeForm(item ? { item: item.id, action: 'edit' } : { item: lastChange === null ? null : ops[0].id, action: 'edit' });
       saved(`${item ? 'Changed' : 'Added'} “${title}”.`);
     },
   });

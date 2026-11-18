@@ -4,6 +4,11 @@ import { createUploadRoutes, MAX_UPLOAD_BYTES, uploadsNotSetUp } from './uploads
 import { EDITOR_CSS, EDITOR_JS, IMAGES_PAGE_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
 export const MAX_BODY_BYTES = 64 * 1024;
 const NO_STORE = { 'cache-control': 'no-store' };
+/** When an accepted change is live, in the words the pages use. The store says which (StoreCapabilities.goesLive). */
+const WHEN_LIVE = {
+    'at-once': { changes: 'changes go live on their own', listPage: 'What you save here is on the site straight away.' },
+    'after-checks': { changes: 'changes go live in a few minutes, after checks', listPage: 'What you save here is live in a few minutes, after checks.' },
+};
 const json = (status, body) => Response.json(body, { status, headers: NO_STORE });
 /** Nothing at all in the body: what a signed-out request, or a role without the right, gets. */
 const forbidden = () => new Response(null, { status: 403, headers: NO_STORE });
@@ -76,6 +81,7 @@ function describeOp(content, o) {
 }
 export function createEditor(options) {
     const { content, store, mode, site } = options;
+    const when = WHEN_LIVE[store.capabilities.goesLive];
     const uploads = options.uploads ? createUploadRoutes(content, options.uploads, json) : null;
     /** What the item form needs to offer a file picker: absent when the site has no `uploads`. */
     const uploadsSettings = uploads ? { api: '/admin/api/uploads', maxBytes: MAX_UPLOAD_BYTES } : undefined;
@@ -312,6 +318,7 @@ export function createEditor(options) {
             editor: identity.email,
             role: identity.role,
             mode,
+            capabilities: store.capabilities,
             page,
             api: '/admin/api/changes',
             check: '/admin/api/check',
@@ -355,6 +362,7 @@ export function createEditor(options) {
             editor: identity.email,
             role: identity.role,
             mode,
+            capabilities: store.capabilities,
             api: '/admin/api/changes',
             check: '/admin/api/check',
             changesPage: '/admin/changes',
@@ -376,7 +384,7 @@ export function createEditor(options) {
             '<link rel="stylesheet" href="/admin/editor.css"></head><body data-editor-page="list"><main class="wd-page">' +
             `<p class="wd-page__nav"><a href="/admin/edit">back to editing</a> · <a href="/admin/changes">changes</a></p>` +
             `<h1>Edit ${escapeHtml(list.label)}</h1>` +
-            `<p>${mode === 'review' ? 'What you save here waits for an admin to approve it, then it appears on the site.' : 'What you save here is on the site straight away.'}</p>` +
+            `<p>${mode === 'review' ? 'What you save here waits for an admin to approve it, then it appears on the site.' : when.listPage}</p>` +
             '<div id="wd-list" class="wd-list"><noscript><p>This page needs JavaScript to edit the list.</p></noscript></div></main>' +
             `<script type="application/json" id="editor-settings">${data}</script><script type="module" src="/admin/list-page.js"></script></body></html>`;
         return new Response(request.method === 'HEAD' ? null : page, {
@@ -449,7 +457,7 @@ export function createEditor(options) {
         const section = (title, changes, buttons) => `<h2>${title}</h2>` + (changes.length === 0 ? '<p>None.</p>' : `<ul>${changes.map((c) => row(c, buttons(c))).join('')}</ul>`);
         const page = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
             '<meta name="robots" content="noindex, nofollow"><title>changes</title></head><body><main><h1>changes</h1>' +
-            `<p><a href="/admin/edit">back to editing</a> · ${mode === 'review' ? 'changes wait for an admin to approve them' : 'changes go live on their own'}</p>` +
+            `<p><a href="/admin/edit">back to editing</a> · ${mode === 'review' ? 'changes wait for an admin to approve them' : when.changes}</p>` +
             section('waiting', waiting.changes, (c) => (mayApprove ? button(c, 'approve') + button(c, 'reject') : '')) +
             section('recent', live.changes, (c) => (mayUndo ? button(c, 'undo') : '')) +
             section('undone', undone.changes, () => '') +
