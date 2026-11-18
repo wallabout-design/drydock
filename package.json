@@ -41,6 +41,10 @@
     "./editor.js": "./dist/editor.js",
     "./editor.css": "./dist/editor.css",
     "./item-form.js": "./dist/item-form.js",
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
     "./feedback": {
       "types": "./dist/feedback/index.d.ts",
       "default": "./dist/feedback/index.js"
@@ -76,10 +80,14 @@
     "jose": "6.2.17"
   },
   "peerDependencies": {
-    "react": ">=19"
+    "react": ">=19",
+    "vitest": ">=5"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   }

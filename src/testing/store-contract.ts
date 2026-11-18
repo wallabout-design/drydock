@@ -2,7 +2,7 @@
 // starts with INITIAL, so each test knows what is there. Each test makes its own
 // store, so none depends on another.
 import { describe, expect, it } from 'vitest';
-import type { Change, ContentState, Operation, Outcome, Refusal, Store } from '../src/index.js';
+import type { Change, ContentState, Operation, Outcome, Refusal, Store } from '../index.js';
 
 export const INITIAL: ContentState = {
   texts: { 'home.title': 'Hello', 'home.intro': 'Welcome' },

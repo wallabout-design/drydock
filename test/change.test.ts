@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyOperations, type Operation } from '../src/index.js';
-import { INITIAL } from './store-contract.js';
+import { INITIAL } from '../src/testing/index.js';
 
 describe('applyOperations', () => {
   it('a change and its reverse give back the start', () => {

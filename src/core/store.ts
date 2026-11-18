@@ -1,6 +1,6 @@
 // The store interface: where a site's content and its changes are kept. The
 // in-memory fake (fake-store.ts), the git store and the D1 store all implement
-// it and must pass storeContract (test/store-contract.ts). Plain TypeScript.
+// it and must pass storeContract (src/testing/store-contract.ts). Plain TypeScript.
 import type { ContentState, Operation } from './change.js';
 
 /** `auto` puts a change live at once; `review` leaves it waiting for an admin. */

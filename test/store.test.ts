@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeStore } from '../src/index.js';
-import { INITIAL, storeContract } from './store-contract.js';
+import { INITIAL, storeContract } from '../src/testing/index.js';
 
 // The in-memory fake passes the same contract every real store must pass.
 storeContract((initial) => fakeStore({ initial }));
