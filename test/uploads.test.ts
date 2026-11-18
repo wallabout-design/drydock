@@ -234,6 +234,53 @@ describe('uploading an original', () => {
   });
 });
 
+describe('what the item form is told', () => {
+  const SETTINGS = /id="editor-settings">(.*?)<\/script>/;
+  const page = async (m: ReturnType<typeof make>) => {
+    const res = (await m.editor.handle(new Request(ORIGIN + '/admin/lists/rooms', { headers: { [ACCESS_HEADER]: await token('ed@example.com') } }), env))!;
+    return JSON.parse(SETTINGS.exec(await res.text())![1]!);
+  };
+
+  it('says uploads are set up only when the site gave `uploads`', async () => {
+    expect((await page(make())).uploads).toEqual({ api: '/admin/api/uploads', maxBytes: 15 * 1024 * 1024 });
+    expect((await page(make({}, false))).uploads).toBeUndefined();
+  });
+
+  it('lists the sizes saving will ask for, from the crop, and the address of the largest', async () => {
+    const m = make();
+    const { key } = await upload(m);
+    const ask = async (crop: unknown, field = 'photo') =>
+      (await post(m.editor, 'editor', '/admin/api/uploads/sizes', { json: { key, list: 'rooms', field, crop } }))!;
+    const res = await ask(CROP);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sizes: [400, 800, 1600], preview: `/media/${key}/c0-500-3000-3000/800.webp`, width: 4000, height: 6000 });
+    // A narrower crop: its own width is the last size, and there is no larger one.
+    expect(((await (await ask({ x: 0, y: 0, w: 500, h: 500 })).json()) as { sizes: number[] }).sizes).toEqual([400, 500]);
+    expect((await ask({ x: 0, y: 0, w: 500, h: 400 })).status).toBe(422);
+    // Another field's upload is not this field's, and a field with no shape needs no crop.
+    expect((await ask(CROP, 'other')).status).toBe(404);
+    const plain = await upload(m, 'other');
+    const whole = (await post(m.editor, 'editor', '/admin/api/uploads/sizes', { json: { key: plain.key, list: 'rooms', field: 'other' } }))!;
+    expect(await whole.json()).toMatchObject({ sizes: [480, 960, 1600], preview: `/media/${plain.key}/whole/1600.webp` });
+    expect((await post(m.editor, 'nobody', '/admin/api/uploads/sizes', { json: { key } }))!.status).toBe(403);
+    expect(m.calls).toHaveLength(0);
+  });
+
+  it('gives a stored original back to staff, only for the field it was uploaded for', async () => {
+    const m = make();
+    const { key } = await upload(m, 'photo', PNG);
+    const get = async (query: string, who = true) =>
+      (await m.editor.handle(new Request(`${ORIGIN}/admin/api/uploads/original?${query}`, { headers: who ? { [ACCESS_HEADER]: await token('ed@example.com') } : {} }), env))!;
+    const res = await get(`key=${key}&list=rooms&field=photo`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
+    expect((await get(`key=${key}&list=rooms&field=other`)).status).toBe(404);
+    expect((await get(`key=nope&list=rooms&field=photo`)).status).toBe(404);
+    expect((await get(`key=${key}&list=rooms&field=photo`, false)).status).toBe(403);
+  });
+});
+
 describe('making a size', () => {
   it('cuts the crop in whole pixels, makes a WebP and an AVIF, and stores both', async () => {
     const m = make();
@@ -257,13 +304,20 @@ describe('making a size', () => {
     expect([...m.objects.keys()].some((k) => k.endsWith('.avif'))).toBe(false);
   });
 
-  it('stores no AVIF when the images service answers WebP for an AVIF request, and keeps the WebP', async () => {
+  it('stores a no-AVIF marker when the images service answers WebP for an AVIF request, and keeps the WebP', async () => {
     const m = make({ avifAnswer: 'image/webp' });
     const { key } = await upload(m);
     const res = (await post(m.editor, 'editor', REND, { json: { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 } }))!;
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ key: `renditions/${key}/c0-500-3000-3000/800.webp`, made: true, avif: false });
-    expect([...m.objects.keys()].some((k) => k.endsWith('.avif'))).toBe(false);
+    const marker = m.objects.get(`renditions/${key}/c0-500-3000-3000/800.avif`)!;
+    expect(marker.value.length).toBe(0);
+    expect(marker.customMetadata).toEqual({ avif: 'none' });
+    // Asking again neither asks the service again nor claims an AVIF.
+    m.formats.length = 0;
+    const again = (await post(m.editor, 'editor', REND, { json: { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 } }))!;
+    expect(await again.json()).toEqual({ key: `renditions/${key}/c0-500-3000-3000/800.webp`, made: false, avif: false });
+    expect(m.formats).toEqual([]);
   });
 
   it('keeps the WebP when the AVIF fails, and makes only the missing AVIF of a size already made', async () => {
@@ -272,7 +326,7 @@ describe('making a size', () => {
     const body = { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 };
     expect((await post(m.editor, 'editor', REND, { json: body }))!.status).toBe(200);
     expect(m.objects.has(`renditions/${key}/c0-500-3000-3000/800.webp`)).toBe(true);
-    expect(m.objects.has(`renditions/${key}/c0-500-3000-3000/800.avif`)).toBe(false);
+    expect(m.objects.has(`renditions/${key}/c0-500-3000-3000/800.avif`)).toBe(false); // an error leaves no marker
 
     const retry = make();
     const again = await upload(retry);
@@ -404,8 +458,33 @@ describe('serveMedia', () => {
     const res = await get(bucket, `/media/${KEY}/whole/800.avif`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/avif');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect((await get(bucket, `/media/${KEY}/whole/801.avif`)).status).toBe(404);
     expect((await get(bucket, `/media/${KEY}/whole/800.webp`)).status).toBe(404);
+  });
+
+  it('answers the WebP of the same size for an AVIF that is not there, with a short cache', async () => {
+    const { bucket, objects } = fakeBucket();
+    objects.set(`renditions/${KEY}/whole/800.webp`, { value: new TextEncoder().encode('webp-bytes') });
+    const res = await get(bucket, `/media/${KEY}/whole/800.avif`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/webp');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
+    expect(await res.text()).toBe('webp-bytes');
+    const head = await get(bucket, `/media/${KEY}/whole/800.avif`, 'HEAD');
+    expect(head.status).toBe(200);
+    expect(head.headers.get('content-type')).toBe('image/webp');
+    expect(await head.text()).toBe('');
+  });
+
+  it('answers the WebP for the no-AVIF marker too', async () => {
+    const { bucket, objects } = fakeBucket();
+    objects.set(`renditions/${KEY}/whole/800.webp`, { value: new TextEncoder().encode('webp-bytes') });
+    objects.set(`renditions/${KEY}/whole/800.avif`, { value: new Uint8Array(0), customMetadata: { avif: 'none' } });
+    const res = await get(bucket, `/media/${KEY}/whole/800.avif`);
+    expect(res.headers.get('content-type')).toBe('image/webp');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
+    expect(await res.text()).toBe('webp-bytes');
   });
 
   it('serves a made size with its headers', async () => {

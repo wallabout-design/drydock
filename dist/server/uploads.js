@@ -5,17 +5,23 @@
 //
 //   POST /admin/api/uploads?list=<list>&field=<field>   the image itself; answers { key, width, height }
 //   POST /admin/api/uploads/renditions                   { key, list, field, crop?, width }: makes one size, as WebP and as AVIF where it fits
-//   serveMedia(request, bucket)                          GET /media/<key>/<crop>/<w>.<webp|avif>, for the site's Worker
+//   GET  /admin/api/uploads/missing?list=&offset=        which sizes the stored items need and lack (the rebuild page)
+//   serveMedia(request, bucket)                          GET /media/<key>/<crop>/<w>.<webp|avif>, for the site's Worker (a missing AVIF answers the WebP)
 //
 // The bucket and the images binding are described by the few methods used, so
 // a site passes its R2 bucket and `IMAGES` binding as they are and tests pass fakes.
-import { avifFits, cropSegment, renditionHeight, renditionWidths } from '../core/image.js';
+import { avifFits, cropSegment, imageSources, renditionHeight, renditionWidths } from '../core/image.js';
 import { LIMITS } from '../core/limits.js';
 import { checkCrop, UPLOAD_KEY } from '../core/validate.js';
 /** The biggest original, in bytes. */
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const DEFAULT_MEDIA_PREFIX = '/media/';
 export const RENDITION_CACHE = 'public, max-age=31536000, immutable';
+/** For a WebP answered where an AVIF was asked for and is not there: short, so an AVIF made later is picked up. */
+export const FALLBACK_CACHE = 'public, max-age=3600';
+/** The `customMetadata` of the zero-byte file stored at an AVIF key when the images service can't make that AVIF. */
+export const NO_AVIF = { avif: 'none' };
+const isNoAvif = (o) => o.size === 0 || o.customMetadata?.avif === NO_AVIF.avif;
 const WEBP_QUALITY = 80;
 /** The kind of image from its first bytes (never from a name or a header), or null. */
 export function sniffImage(bytes) {
@@ -90,6 +96,28 @@ function isAllowanceUsedUp(error) {
     const e = error;
     return e?.code === 9422 || (typeof e?.message === 'string' && e.message.includes('9422'));
 }
+/**
+ * Heads one check request may spend: a Worker on the free plan makes at most
+ * 50 subrequests, and the request also reads the store. A run starts an item
+ * only when the item's most heads fit in what is left, except the run's first
+ * item, which it always checks so the page moves on.
+ */
+export const HEAD_BUDGET = 40;
+/**
+ * The most heads checking one item can take: per image field, the original,
+ * every declared width twice (its WebP and its AVIF), and one more size (the
+ * original's own width when it is narrower than the widest, or the lightbox
+ * size when it is wider, never both), also counted twice.
+ */
+function mostHeads(fields, values) {
+    let heads = 0;
+    for (const field of fields) {
+        const value = values[field.name];
+        if (typeof value === 'object' && value !== null && 'key' in value)
+            heads += 1 + 2 * ((field.widths ?? LIMITS.image.defaultWidths).length + 1);
+    }
+    return heads;
+}
 /** One size, cut and resized from the original's stream in one format. Throws what the images service throws. */
 async function transformTo(body, crop, width, format, images) {
     const transform = images.input(body);
@@ -105,6 +133,57 @@ export function createUploadRoutes(content, options, json) {
     };
     const unknownField = () => json(404, { error: 'unknown-field', message: 'This image field is no longer on the site. Reload the page.' });
     return {
+        async missing(listName, items, offset) {
+            const list = content.lists.get(listName);
+            const fields = (list?.fields ?? []).filter((f) => f.type === 'image');
+            const report = { list: listName, items: items.length, offset, next: null, needed: 0, missing: [], problems: [] };
+            let budget = HEAD_BUDGET;
+            let at = offset;
+            while (at < items.length) {
+                const item = items[at];
+                if (at > offset && mostHeads(fields, item.values) > budget)
+                    break;
+                at += 1;
+                const rawTitle = list ? item.values[list.titleField] : undefined;
+                const title = typeof rawTitle === 'string' && rawTitle !== '' ? rawTitle : item.id;
+                for (const field of fields) {
+                    const value = item.values[field.name];
+                    if (typeof value !== 'object' || !('key' in value))
+                        continue;
+                    const problem = (kind, message) => report.problems.push({ item: item.id, title, field: field.name, label: field.label, kind, message });
+                    budget -= 1;
+                    const original = await readOriginal(bucket, value.key, listName, field.name);
+                    if (!original) {
+                        problem('original', `The original of ${field.label.toLowerCase()} is not in the bucket for this field. Choose the image again.`);
+                        continue;
+                    }
+                    const checked = checkCrop(field, value.crop, original.width, original.height);
+                    if ('problem' in checked) {
+                        problem('crop', checked.problem.message);
+                        continue;
+                    }
+                    const upload = { key: value.key, alt: '', width: original.width, height: original.height, ...(checked.crop ? { crop: checked.crop } : {}) };
+                    const sizes = renditionWidths(field, upload);
+                    const shownWidth = checked.crop?.w ?? original.width;
+                    const shownHeight = checked.crop?.h ?? original.height;
+                    const asAvif = new Set(sizes.widths.filter((w) => avifFits(w, renditionHeight(shownWidth, shownHeight, w))));
+                    for (const width of [...sizes.widths, ...(sizes.full === undefined ? [] : [sizes.full])]) {
+                        report.needed += 1;
+                        budget -= 1;
+                        // A size is missing when its WebP is, or when it should have an AVIF (a file, or the marker that none can be made) and has neither.
+                        let absent = !(await bucket.head(renditionKey(value.key, checked.crop, width)));
+                        if (!absent && asAvif.has(width)) {
+                            budget -= 1;
+                            absent = !(await bucket.head(renditionKey(value.key, checked.crop, width, 'avif')));
+                        }
+                        if (absent)
+                            report.missing.push({ item: item.id, key: value.key, list: listName, field: field.name, crop: checked.crop ?? null, width });
+                    }
+                }
+            }
+            report.next = at < items.length ? at : null;
+            return report;
+        },
         async upload(request, query, now) {
             const list = query.get('list');
             const field = query.get('field');
@@ -161,9 +240,12 @@ export function createUploadRoutes(content, options, json) {
             const avifTarget = renditionKey(key, checked.crop, width, 'avif');
             const wantAvif = avifFits(width, renditionHeight(checked.crop?.w ?? original.width, checked.crop?.h ?? original.height, width));
             const webpStored = (await bucket.head(target)) !== null;
-            const avifStored = wantAvif && (await bucket.head(avifTarget)) !== null;
+            // A stored AVIF key is either the file or the marker that none can be made; only the file counts as an AVIF.
+            const avifHead = wantAvif ? await bucket.head(avifTarget) : null;
+            const avifStored = avifHead !== null;
+            const avifIsFile = avifHead !== null && !isNoAvif(avifHead);
             if (webpStored && (avifStored || !wantAvif))
-                return json(200, { key: target, made: false, avif: avifStored });
+                return json(200, { key: target, made: false, avif: avifIsFile });
             let made = false;
             if (!webpStored) {
                 let webp;
@@ -184,9 +266,11 @@ export function createUploadRoutes(content, options, json) {
                 await bucket.put(target, webp.bytes, { httpMetadata: { contentType: 'image/webp', cacheControl: RENDITION_CACHE } });
                 made = true;
             }
-            // AVIF is best effort: the WebP above is what every page needs, so a failure here leaves the size
-            // WebP-only (no AVIF file, and no AVIF address on the page) until a later save makes it.
-            let avif = avifStored;
+            // AVIF is best effort: the WebP above is what every page needs, and a missing AVIF is answered with
+            // the WebP by serveMedia. When the images service answers something else than AVIF, a zero-byte marker
+            // is stored so the rebuild page doesn't count the size missing again. A thrown error leaves no marker,
+            // so a later rebuild tries again.
+            let avif = avifIsFile;
             if (wantAvif && !avifStored) {
                 try {
                     const source = await bucket.get(originalKey(key));
@@ -195,12 +279,51 @@ export function createUploadRoutes(content, options, json) {
                         await bucket.put(avifTarget, out.bytes, { httpMetadata: { contentType: 'image/avif', cacheControl: RENDITION_CACHE } });
                         avif = true;
                     }
+                    else if (out) {
+                        await bucket.put(avifTarget, new Uint8Array(0), { customMetadata: { ...NO_AVIF } });
+                    }
                 }
                 catch {
                     // Stays WebP-only; see above.
                 }
             }
             return json(200, { key: target, made, avif });
+        },
+        async sizes(body) {
+            const malformed = () => json(400, { error: 'malformed', message: 'The editor sent something this site did not understand. Reload the page and try again.' });
+            if (typeof body !== 'object' || body === null || Array.isArray(body))
+                return malformed();
+            const { key, list, field: fieldName, crop } = body;
+            if (typeof key !== 'string' || typeof list !== 'string' || typeof fieldName !== 'string')
+                return malformed();
+            const field = imageField(list, fieldName);
+            if (!field)
+                return unknownField();
+            const original = await readOriginal(bucket, key, list, fieldName);
+            if (!original)
+                return json(404, { error: 'unknown-upload', message: 'That image was not uploaded for this field. Please choose it again.' });
+            const checked = checkCrop(field, crop === null ? undefined : crop, original.width, original.height);
+            if ('problem' in checked)
+                return json(422, { error: 'invalid', message: checked.problem.message });
+            const upload = { key, alt: '', width: original.width, height: original.height, ...(checked.crop ? { crop: checked.crop } : {}) };
+            const { widths, full } = renditionWidths(field, upload);
+            const shown = imageSources(field, upload, { prefix: options.prefix ?? DEFAULT_MEDIA_PREFIX });
+            const largest = shown.srcset.split(', ').pop().split(' ')[0];
+            return json(200, { sizes: [...widths, ...(full === undefined ? [] : [full])], preview: largest, width: original.width, height: original.height });
+        },
+        async original(query) {
+            const key = query.get('key');
+            const list = query.get('list');
+            const field = query.get('field');
+            if (key === null || list === null || field === null || !imageField(list, field))
+                return unknownField();
+            const found = await readOriginal(bucket, key, list, field);
+            const object = found ? await bucket.get(originalKey(key)) : null;
+            const type = object?.customMetadata?.contentType;
+            if (!object || (type !== 'image/jpeg' && type !== 'image/png' && type !== 'image/webp')) {
+                return json(404, { error: 'unknown-upload', message: 'That image was not uploaded for this field. Please choose it again.' });
+            }
+            return new Response(object.body, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, max-age=600', 'x-content-type-options': 'nosniff' } });
         },
         async settle(list, values) {
             const problems = [];
@@ -256,11 +379,21 @@ export async function serveMedia(request, bucket, prefix = DEFAULT_MEDIA_PREFIX)
     if (!match)
         return missing();
     const format = match[4];
-    const object = await bucket.get(`renditions/${match[1]}/${match[2]}/${match[3]}.${format}`);
+    const base = `renditions/${match[1]}/${match[2]}/${match[3]}`;
+    let object = await bucket.get(`${base}.${format}`);
+    let served = format;
+    let cache = RENDITION_CACHE;
+    // Sizes made before AVIF, and sizes the images service can't make as AVIF, answer the WebP instead.
+    if (format === 'avif' && (!object || isNoAvif(object))) {
+        await object?.body.cancel();
+        object = await bucket.get(`${base}.webp`);
+        served = 'webp';
+        cache = FALLBACK_CACHE;
+    }
     if (!object)
         return missing();
     return new Response(request.method === 'HEAD' ? null : object.body, {
         status: 200,
-        headers: { 'content-type': MIME[format], 'cache-control': RENDITION_CACHE, 'x-content-type-options': 'nosniff' },
+        headers: { 'content-type': MIME[served], 'cache-control': cache, 'x-content-type-options': 'nosniff' },
     });
 }

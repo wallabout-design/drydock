@@ -1,7 +1,7 @@
 import { can, identify } from './access.js';
 import { orderItems } from '../core/read.js';
-import { createUploadRoutes, uploadsNotSetUp } from './uploads.js';
-import { EDITOR_CSS, EDITOR_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
+import { createUploadRoutes, MAX_UPLOAD_BYTES, uploadsNotSetUp } from './uploads.js';
+import { EDITOR_CSS, EDITOR_JS, IMAGES_PAGE_JS, ITEM_FORM_JS, LIST_PAGE_JS } from './editor-assets.js';
 export const MAX_BODY_BYTES = 64 * 1024;
 const NO_STORE = { 'cache-control': 'no-store' };
 const json = (status, body) => Response.json(body, { status, headers: NO_STORE });
@@ -77,6 +77,8 @@ function describeOp(content, o) {
 export function createEditor(options) {
     const { content, store, mode, site } = options;
     const uploads = options.uploads ? createUploadRoutes(content, options.uploads, json) : null;
+    /** What the item form needs to offer a file picker: absent when the site has no `uploads`. */
+    const uploadsSettings = uploads ? { api: '/admin/api/uploads', maxBytes: MAX_UPLOAD_BYTES } : undefined;
     const ownOrigin = (request) => site.origin ?? new URL(request.url).origin;
     /** Who may undo: anyone who may edit when changes go live on their own, only admins when an admin reviews them. */
     const undoAction = mode === 'auto' ? 'edit' : 'approve';
@@ -231,6 +233,30 @@ export function createEditor(options) {
         }
         return uploads.rendition(parsed);
     }
+    /** The sizes saving an upload will ask for (the form can't work them out itself: they depend on the crop). */
+    async function uploadSizes(request) {
+        if (request.method !== 'POST')
+            return wrongMethod('POST');
+        const gate = writeGate(request, true);
+        if (gate)
+            return gate;
+        const body = await readBody(request);
+        if (body instanceof Response)
+            return body;
+        let parsed;
+        try {
+            parsed = JSON.parse(body.text);
+        }
+        catch {
+            parsed = null;
+        }
+        return uploads.sizes(parsed);
+    }
+    async function uploadOriginal(request) {
+        if (request.method !== 'GET')
+            return wrongMethod('GET');
+        return uploads.original(new URL(request.url).searchParams);
+    }
     function originGate(request) {
         if (request.headers.get('origin') !== ownOrigin(request)) {
             return json(403, { error: 'cross-site', message: 'This can only be sent from the site’s own editor.' });
@@ -290,6 +316,7 @@ export function createEditor(options) {
             api: '/admin/api/changes',
             check: '/admin/api/check',
             changesPage: '/admin/changes',
+            uploads: uploadsSettings,
             texts: [...content.texts.values()].map(({ key, max, label }) => ({ key, max, label, current: state.texts[key] ?? null })),
             // The whole declaration and the items in order: the page opens the item form from them.
             lists: [...content.lists.values()].map((l) => ({
@@ -331,6 +358,7 @@ export function createEditor(options) {
             api: '/admin/api/changes',
             check: '/admin/api/check',
             changesPage: '/admin/changes',
+            uploads: uploadsSettings,
             list: {
                 name: list.name,
                 label: list.label,
@@ -351,6 +379,48 @@ export function createEditor(options) {
             `<p>${mode === 'review' ? 'What you save here waits for an admin to approve it, then it appears on the site.' : 'What you save here is on the site straight away.'}</p>` +
             '<div id="wd-list" class="wd-list"><noscript><p>This page needs JavaScript to edit the list.</p></noscript></div></main>' +
             `<script type="application/json" id="editor-settings">${data}</script><script type="module" src="/admin/list-page.js"></script></body></html>`;
+        return new Response(request.method === 'HEAD' ? null : page, {
+            status: 200,
+            headers: {
+                ...NO_STORE,
+                'content-type': 'text/html; charset=utf-8',
+                'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; form-action 'none'",
+                'x-robots-tag': 'noindex, nofollow',
+            },
+        });
+    }
+    /** Which sizes are missing for some of a list's items: one bounded run, which the page asks for again from `next`. */
+    async function missing(request) {
+        if (request.method !== 'GET')
+            return wrongMethod('GET');
+        const query = new URL(request.url).searchParams;
+        const name = query.get('list') ?? '';
+        const list = content.lists.get(name);
+        if (!list || !list.fields.some((f) => f.type === 'image'))
+            return json(404, { error: 'unknown-list', message: 'That list has no image field. Reload the page.' });
+        const text = query.get('offset') ?? '0';
+        const offset = Number(text);
+        if (!/^\d{1,6}$/.test(text) || !Number.isSafeInteger(offset))
+            return json(400, { error: 'malformed', message: 'The page sent something this site did not understand. Reload the page and try again.' });
+        const state = await store.read();
+        return json(200, { ...(await uploads.missing(name, orderItems(content, name, state.lists[name] ?? []), offset)) });
+    }
+    /** The rebuild images page: for each list with an image field, drawn by images-page.js. */
+    function imagesPage(request) {
+        if (request.method !== 'GET' && request.method !== 'HEAD')
+            return wrongMethod('GET, HEAD');
+        const lists = [...content.lists.values()]
+            .filter((l) => l.fields.some((f) => f.type === 'image'))
+            .map((l) => ({ name: l.name, label: l.label, singular: l.singular }));
+        const data = JSON.stringify({ lists, missing: '/admin/api/uploads/missing', renditions: '/admin/api/uploads/renditions' }).replace(/</g, '\\u003c');
+        const page = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+            '<meta name="robots" content="noindex, nofollow"><title>rebuild images</title>' +
+            '<link rel="stylesheet" href="/admin/editor.css"></head><body data-editor-page="images"><main class="wd-page">' +
+            '<p class="wd-page__nav"><a href="/admin/edit">back to editing</a> · <a href="/admin/changes">changes</a></p>' +
+            '<h1>Rebuild images</h1>' +
+            '<p>When a field’s widths, lightbox size or shape change, the pages ask for image sizes that were never made. This page finds them and makes them. Each size uses some of this month’s free allowance.</p>' +
+            '<div id="wd-images" class="wd-images"><noscript><p>This page needs JavaScript to rebuild images.</p></noscript></div></main>' +
+            `<script type="application/json" id="editor-settings">${data}</script><script type="module" src="/admin/images-page.js"></script></body></html>`;
         return new Response(request.method === 'HEAD' ? null : page, {
             status: 200,
             headers: {
@@ -417,6 +487,12 @@ export function createEditor(options) {
             const listMatch = /^\/admin\/lists\/([^/]+)$/.exec(pathname);
             if (listMatch)
                 return listPage(request, identity, listMatch[1]);
+            if (uploads && pathname === '/admin/images')
+                return can(identity, 'approve') ? imagesPage(request) : forbidden();
+            if (uploads && pathname === '/admin/images-page.js')
+                return can(identity, 'approve') ? editorFile(request, 'text/javascript; charset=utf-8', IMAGES_PAGE_JS) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads/missing')
+                return can(identity, 'approve') ? missing(request) : forbidden();
             if (pathname === '/admin/item-form.js')
                 return editorFile(request, 'text/javascript; charset=utf-8', ITEM_FORM_JS);
             if (pathname === '/admin/list-page.js')
@@ -431,6 +507,10 @@ export function createEditor(options) {
                 return can(identity, 'edit') ? upload(request) : forbidden();
             if (uploads && pathname === '/admin/api/uploads/renditions')
                 return can(identity, 'edit') ? rendition(request) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads/sizes')
+                return can(identity, 'edit') ? uploadSizes(request) : forbidden();
+            if (uploads && pathname === '/admin/api/uploads/original')
+                return can(identity, 'edit') ? uploadOriginal(request) : forbidden();
             if (pathname === '/admin/api/changes')
                 return can(identity, 'edit') ? submit(request, identity) : forbidden();
             const decision = /^\/admin\/api\/changes\/([^/]+)\/(approve|reject|undo)$/.exec(pathname);

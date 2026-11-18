@@ -5,7 +5,7 @@
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
-import { ACCESS_HEADER, createEditor } from '../dist/server/index.js';
+import { ACCESS_HEADER, createEditor, serveMedia } from '../dist/server/index.js';
 
 const port = Number(process.argv[2]);
 const mode = process.argv[3] === 'review' ? 'review' : 'auto';
@@ -14,7 +14,7 @@ const TEAM = 'fixture.cloudflareaccess.com';
 const AUD = 'fixture-aud';
 const env = { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, EDITOR_EMAILS: 'ed@example.com', ADMIN_EMAILS: 'boss@example.com' };
 
-const content = defineContent({
+const declare = (photo = {}) => defineContent({
   texts: [
     { key: 'home.title', default: 'Welcome to the house', max: 30, label: 'Home title' },
     { key: 'home.intro', default: 'A quiet place by the lake.', max: 120, label: 'Home intro' },
@@ -44,7 +44,8 @@ const content = defineContent({
             { value: 'garden', label: 'The garden' },
           ],
         },
-        { name: 'photo', label: 'Photo', type: 'image' },
+        { name: 'photo', label: 'Photo', type: 'image', ...photo },
+        { name: 'banner', label: 'Banner', type: 'image', aspect: '3:2', widths: [200, 400], full: 800, minWidth: 600 },
       ],
     },
   ],
@@ -56,6 +57,7 @@ const content = defineContent({
     },
   ],
 });
+
 
 const START = () => ({
   texts: { 'home.title': 'Welcome to the house', 'home.intro': 'A quiet place by the lake.', 'home.cta': 'Book a stay' },
@@ -96,15 +98,75 @@ const token = (email) =>
     .setExpirationTime('1h')
     .sign(pair.privateKey);
 
+// A bucket and an images service that live in memory. The images service reads a
+// PNG's real size from its header and "makes" a size by answering a few bytes of
+// WebP, so the tests can see what was asked for. /__test/failnext makes the next
+// size fail, as the service would when it is down.
+// A real 1 by 1 WebP, so a browser can show a made size.
+const TINY_WEBP = Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==', 'base64');
+let objects = new Map();
+let calls = [];
+let failNext = 0;
+const allowance = { exhausted: false, left: null };
+const bucket = {
+  async head(key) {
+    const o = objects.get(key);
+    return o ? { size: o.value.length, customMetadata: o.customMetadata } : null;
+  },
+  async get(key) {
+    const o = objects.get(key);
+    return o ? { size: o.value.length, customMetadata: o.customMetadata, body: new Blob([o.value]).stream() } : null;
+  },
+  async put(key, value, options) {
+    objects.set(key, { value: new Uint8Array(value), ...options });
+  },
+};
+const images = {
+  async info(stream) {
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    const view = new DataView(bytes.buffer, bytes.byteOffset);
+    return { format: 'image/png', width: view.getUint32(16), height: view.getUint32(20) };
+  },
+  input() {
+    const call = {};
+    const t = {
+      transform(o) {
+        Object.assign(call, o);
+        return t;
+      },
+      async output(options) {
+        // The tests count whole sizes, so only the WebP of a size spends the "left: n" allowance; an AVIF is answered as AVIF.
+        const avif = options.format === 'image/avif';
+        if (allowance.exhausted || (allowance.left === 0 && !avif)) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
+        if (allowance.left !== null && !avif) allowance.left -= 1;
+        if (failNext > 0) {
+          failNext--;
+          throw new Error('the images service is down');
+        }
+        calls.push(call);
+        return { response: () => new Response(TINY_WEBP, { headers: { 'content-type': options.format } }) };
+      },
+    };
+    return t;
+  },
+};
+
 let store;
 let editor;
-function reset() {
-  store = fakeStore({ initial: START() });
+function reset(photo = {}, initial = START(), keepBucket = false) {
+  if (!keepBucket) objects = new Map();
+  calls = [];
+  failNext = 0;
+  allowance.exhausted = false;
+  allowance.left = null;
+  store = fakeStore({ initial });
   editor = createEditor({
-    content,
+    uploads: { bucket, images },
+    content: declare(photo),
     store,
     mode,
     keys,
+    uploads: { bucket, images },
     site: {
       fetchPage: async (path) =>
         path === '/' || path === '/other'
@@ -131,10 +193,48 @@ createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === '/__test/state') return send(200, await store.read());
+  if (url.pathname === '/__test/bucket') {
+    return send(200, { keys: [...objects.keys()], calls, originals: [...objects].filter(([k]) => k.startsWith('originals/')).map(([k, o]) => ({ key: k, size: o.value.length, ...o.customMetadata })) });
+  }
+  if (url.pathname === '/__test/failnext') {
+    failNext = Number(url.searchParams.get('count') ?? 1);
+    return send(200, {});
+  }
+  if (url.pathname.startsWith('/media/')) {
+    const made = await serveMedia(new Request(url, { method: req.method }), bucket);
+    res.writeHead(made.status, Object.fromEntries(made.headers));
+    return res.end(Buffer.from(await made.arrayBuffer()));
+  }
   if (url.pathname === '/__test/reset') {
     reset();
     return send(200, {});
   }
+  if (url.pathname === '/__test/uploads') {
+    // Starts over with rooms that hold uploaded photos (their originals are in the bucket) and a photo field as declared.
+    const { rooms, photo } = JSON.parse(body.toString());
+    objects = new Map();
+    const list = rooms.map(({ id, n, crop }) => {
+      const key = `2026/11/${String(n).padStart(24, 'a')}`;
+      objects.set(`originals/${key}`, { value: new Uint8Array([1]), customMetadata: { list: 'rooms', field: 'photo', width: '4000', height: '3000' } });
+      return { id, values: { title: id, photo: { key, alt: 'a room', width: 4000, height: 3000, ...(crop ? { crop } : {}) } } };
+    });
+    reset(photo, { texts: START().texts, lists: { rooms: list } }, true);
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/declare') {
+    // The site is deployed again with the photo field changed; the store and the bucket stay.
+    const keep = await store.read();
+    reset(JSON.parse(body.toString()), keep, true);
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/allowance') {
+    // { exhausted: true } now, or { left: n } after n more sizes, or { exhausted: false } to lift it.
+    const { exhausted = false, left = null } = JSON.parse(body.toString());
+    allowance.exhausted = exhausted;
+    allowance.left = left;
+    return send(200, {});
+  }
+  if (url.pathname === '/__test/renditions') return send(200, [...objects.keys()].filter((k) => k.startsWith('renditions/') && k.endsWith('.webp')).sort());
   if (url.pathname === '/__test/other') {
     // Someone else edits a text behind the editor's back (always live, so the page is stale).
     const { key, text } = JSON.parse(body.toString());

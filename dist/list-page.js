@@ -199,6 +199,7 @@ async function run(ops, done, focus) {
 // --- the form --------------------------------------------------------------
 
 function closeForm(focus) {
+  open?.form.destroy();
   open = null;
   formMount.replaceChildren();
   render(focus);
@@ -209,6 +210,7 @@ function openForm(item) {
   const form = createItemForm({
     list,
     item,
+    uploads: settings.uploads,
     onCancel: () => closeForm(item ? { item: item.id, action: 'edit' } : { item: null }),
     async onSubmit(values) {
       const ops = item
@@ -279,3 +281,8 @@ rows.addEventListener('click', (event) => {
 });
 
 render();
+
+// A link from another page (the rebuild images page) opens one item's form: ?edit=<id>.
+const wanted = new URLSearchParams(location.search).get('edit');
+const wantedItem = wanted === null ? undefined : items.find((i) => i.id === wanted);
+if (wantedItem) openForm(wantedItem);
