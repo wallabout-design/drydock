@@ -338,6 +338,22 @@ describe('making a size', () => {
     expect(retry.formats).toEqual(['image/avif']);
   });
 
+  it('answers 429 when only the AVIF was left to make and the allowance is used up, and 200 when the WebP was just made', async () => {
+    const used = Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
+    const m = make({ failAvif: used });
+    const { key } = await upload(m);
+    const body = { key, list: 'rooms', field: 'photo', crop: CROP, width: 800 };
+    // The WebP is made, so the size is usable: 200, WebP-only.
+    const first = (await post(m.editor, 'editor', REND, { json: body }))!;
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ made: true, avif: false });
+    // Only the AVIF is left: the allowance stop must reach the page.
+    const second = (await post(m.editor, 'editor', REND, { json: body }))!;
+    expect(second.status).toBe(429);
+    expect(await second.json()).toMatchObject({ error: 'allowance' });
+    expect(m.objects.has(`renditions/${key}/c0-500-3000-3000/800.avif`)).toBe(false);
+  });
+
   it('accepts the field’s full width, and answers 200 without making it again', async () => {
     const m = make();
     const { key } = await upload(m);

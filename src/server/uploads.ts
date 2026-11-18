@@ -379,8 +379,12 @@ export function createUploadRoutes(content: Content, options: UploadsOptions, js
           } else if (out) {
             await bucket.put(avifTarget, new Uint8Array(0), { customMetadata: { ...NO_AVIF } });
           }
-        } catch {
-          // Stays WebP-only; see above.
+        } catch (error) {
+          // Stays WebP-only; see above. But when this request was only for the AVIF and the allowance is
+          // used up, say so: the rebuild page must stop at the allowance, not count the size as made.
+          if (!made && isAllowanceUsedUp(error)) {
+            return json(429, { error: 'allowance', message: 'This month’s free image allowance is used up, so new sizes can’t be made until next month. Images already on the site still work. Choose an image that is already online, or try again next month.' });
+          }
         }
       }
       return json(200, { key: target, made, avif });
