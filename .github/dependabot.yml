@@ -1,0 +1,29 @@
+# Weekly dependency updates. Each update waits seven days after its release, so
+# a release published with something bad in it has a week to be withdrawn before
+# it reaches us. Security updates are not delayed (standards/security.md,
+# "dependencies and actions").
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+    ignore:
+      # Types must match the runtime: Node 24 (.nvmrc). Raise both together.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
