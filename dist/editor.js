@@ -14,6 +14,14 @@
 const settings = JSON.parse(document.getElementById('editor-settings')?.textContent ?? '{}');
 const review = settings.mode === 'review';
 
+// The staff hint for the dock (src/dock/staff.ts reads the same key): this browser has opened the edit view,
+// so public pages may ask /admin/api/me who is signed in. Storage can be blocked, so a failure is fine.
+try {
+  localStorage.setItem('drydock-staff', '1');
+} catch {
+  // No hint: public pages then make no request.
+}
+
 /** Plain text on one line: one space between words, none at the ends. */
 const tidy = (text) => text.replace(/\s+/g, ' ').trim();
 const lengthOf = (text) => [...text].length;

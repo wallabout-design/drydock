@@ -464,6 +464,21 @@ export function createEditor(options) {
             },
         });
     }
+    /** Who is signed in, for the dock's staff hint. Only admins approve, so only they are told how many changes wait. */
+    async function me(request, identity) {
+        if (request.method !== 'GET')
+            return wrongMethod('GET');
+        let waiting = 0;
+        if (can(identity, 'approve')) {
+            let cursor;
+            do {
+                const page = await store.list(cursor === undefined ? { state: 'waiting' } : { state: 'waiting', cursor });
+                waiting += page.changes.length;
+                cursor = page.next ?? undefined;
+            } while (cursor !== undefined);
+        }
+        return json(200, { email: identity.email, role: identity.role, waiting });
+    }
     function editorFile(request, type, text) {
         if (request.method !== 'GET' && request.method !== 'HEAD')
             return wrongMethod('GET, HEAD');
@@ -501,6 +516,8 @@ export function createEditor(options) {
                 return editorFile(request, 'text/javascript; charset=utf-8', EDITOR_JS);
             if (pathname === '/admin/editor.css')
                 return editorFile(request, 'text/css; charset=utf-8', EDITOR_CSS);
+            if (pathname === '/admin/api/me')
+                return me(request, identity);
             if (pathname === '/admin/api/check')
                 return can(identity, 'edit') ? check(request) : forbidden();
             if (uploads && pathname === '/admin/api/uploads')

@@ -69,7 +69,7 @@ describe('paths the editor does not own', () => {
 describe('signed out: nothing given, nothing changed', () => {
   const routes: [string, string][] = [
     ['GET', '/admin'], ['GET', '/admin/'], ['GET', '/admin/edit?page=/'], ['GET', '/admin/changes'],
-    ['GET', '/admin/editor.js'], ['GET', '/admin/editor.css'], ['GET', '/admin/item-form.js'], ['GET', '/admin/list-page.js'], ['GET', '/admin/lists/rooms'], ['GET', '/admin/nothing-here'],
+    ['GET', '/admin/editor.js'], ['GET', '/admin/editor.css'], ['GET', '/admin/item-form.js'], ['GET', '/admin/list-page.js'], ['GET', '/admin/lists/rooms'], ['GET', '/admin/api/me'], ['GET', '/admin/nothing-here'],
     ['POST', '/admin/api/changes'], ['POST', '/admin/api/check'], ['POST', '/admin/api/changes/c1/approve'],
     ['POST', '/admin/api/changes/c1/reject'], ['POST', '/admin/api/changes/c1/undo'],
   ];
@@ -349,5 +349,35 @@ describe('as an admin', () => {
   it('gets 404 for a route that does not exist', async () => {
     const res = (await call(make('auto').editor, 'admin', 'GET', '/admin/nothing-here'))!;
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /admin/api/me, the dock’s staff hint', () => {
+  it('tells an editor who they are, with nothing waiting', async () => {
+    const { editor } = make('review');
+    const res = (await call(editor, 'editor', 'GET', '/admin/api/me'))!;
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(await res.json()).toEqual({ email: 'ed@example.com', role: 'editor', waiting: 0 });
+  });
+
+  it('tells an admin how many changes wait, counting every page', async () => {
+    const { editor } = make('review');
+    // Two changes wait (review mode holds each one for an admin).
+    await call(editor, 'editor', 'POST', '/admin/api/changes', { body: setTitle('Howdy') });
+    await call(editor, 'editor', 'POST', '/admin/api/changes', { body: setTitle('Hi there') });
+    const res = (await call(editor, 'admin', 'GET', '/admin/api/me'))!;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ email: 'boss@example.com', role: 'admin', waiting: 2 });
+  });
+
+  it('gives an admin a count of 0 when nothing waits', async () => {
+    const { editor } = make('auto');
+    expect(await (await call(editor, 'admin', 'GET', '/admin/api/me'))!.json()).toEqual({ email: 'boss@example.com', role: 'admin', waiting: 0 });
+  });
+
+  it('refuses a method other than GET', async () => {
+    const res = (await call(make('auto').editor, 'editor', 'POST', '/admin/api/me', { body: {} }))!;
+    expect(res.status).toBe(405);
   });
 });
