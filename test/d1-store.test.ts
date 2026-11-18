@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defineContent } from '../src/index.js';
 import { d1Store, HISTORY_KEPT } from '../src/server/index.js';
 import { testDb } from './d1-sqlite.js';
-import { INITIAL, storeContract } from './store-contract.js';
+import { INITIAL, storeContract } from '../src/testing/index.js';
 
 // The D1 store passes the same contract as the fake, on SQLite with the real migration.
 storeContract((initial) => d1Store(testDb(initial)));

@@ -12,7 +12,7 @@ import {
 } from '../src/server/index.js';
 import { assignPositions } from '../src/stores/git/files.js';
 import { editorStem } from '../src/stores/git/save.js';
-import { INITIAL, storeContract } from './store-contract.js';
+import { INITIAL, storeContract } from '../src/testing/index.js';
 
 const content = defineContent({
   texts: [
