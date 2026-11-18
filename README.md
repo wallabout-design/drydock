@@ -5,7 +5,7 @@
 The package is in progress: the build, tests and release are in place, and the editing features are being built. Sites install it by tag:
 
 ```sh
-npm install github:wallabout-design/editor#v0.2.0
+npm install github:wallabout-design/editor#v0.3.0
 ```
 
 Licensed under the MIT licence (see `LICENSE`). The design is `standards/content-editing.md` in `wallabout-design/standards`.

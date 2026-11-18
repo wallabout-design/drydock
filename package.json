@@ -1,6 +1,6 @@
 {
   "name": "@wallabout-design/editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Client-side editing for wallabout sites: staff edit texts and lists on their own site",
   "license": "MIT",
   "repository": "github:wallabout-design/editor",
