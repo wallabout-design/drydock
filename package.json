@@ -39,7 +39,9 @@
     "check": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "verify": "npm run check && npm run build && npm run test && npm run test:e2e",
+    "scan:secrets": "bash scripts/scan-secrets.sh",
+    "scan:deps": "node scripts/scan-deps.mjs",
+    "verify": "npm run check && npm run build && npm run test && npm run scan:secrets && npm run scan:deps && npm run test:e2e",
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {

@@ -10,6 +10,15 @@ npm install github:wallabout-design/editor#v0.3.0
 
 Licensed under the MIT licence (see `LICENSE`). The design is `standards/content-editing.md` in `wallabout-design/standards`.
 
+## Scans
+
+`npm run verify` also runs two security scans, and CI's `scan` job runs the same commands:
+
+- `npm run scan:secrets`: `gitleaks` over the commits your branch adds to `origin/main`. A false alarm goes in `.gitleaksignore`, with a comment saying what it is.
+- `npm run scan:deps`: `osv-scanner` over `package-lock.json`. It fails on a vulnerability rated high or critical (CVSS 7.0 or more) or with no rating. An ignore goes in `osv-scanner.toml` with a reason and an end date.
+
+Install both tools locally with `brew install gitleaks osv-scanner`. CI installs release binaries at the exact versions in `scripts/ci-install-scan-tools.sh` and checks their SHA-256 first.
+
 ## D1 store
 
 `d1Store(db, { content })` from `@wallabout-design/editor/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/editor/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
