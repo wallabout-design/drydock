@@ -1,10 +1,10 @@
 // Shows and fills a "send feedback" link. Hidden until a visit with ?feedback turns
 // it on for this browser (?feedback=off turns it off), so ordinary visitors never see it.
-import { feedbackId, feedbackMailto, type FeedbackOptions } from './mailto.js';
+import { captureContext } from './capture.js';
+import { type FeedbackOptions } from './mailto.js';
+import { mailtoTransport } from './transports.js';
 
 const KEY = 'feedback';
-/** Text deselected this recently still counts as highlighted. */
-const SELECTION_GRACE_MS = 3000;
 
 /** Values of `?feedback=` that turn the link off. */
 const OFF_VALUES = ['off', '0', 'false', 'no'];
@@ -33,40 +33,15 @@ function feedbackEnabled(): boolean {
 export function initFeedbackLink(link: HTMLAnchorElement, options: FeedbackOptions): () => void {
   if (!feedbackEnabled()) return () => {};
 
-  // Remember the last highlighted text. Tapping the link can clear the selection
-  // first (phones especially), so text deselected in the last few seconds counts.
-  let selected = '';
-  let clearedAt = 0;
-  const onSelectionChange = () => {
-    const text = getSelection()?.toString().trim() ?? '';
-    if (text) {
-      selected = text;
-      clearedAt = 0;
-    } else if (selected && !clearedAt) {
-      clearedAt = Date.now();
-    }
-  };
-  const currentSelection = () => (clearedAt && Date.now() - clearedAt > SELECTION_GRACE_MS ? '' : selected);
+  const transport = mailtoTransport(options);
+  const capture = captureContext();
 
   // Refresh on click, so the viewport is the one the reviewer is looking at, and each
   // email gets its own subject code.
   const update = () => {
-    link.href = feedbackMailto(
-      {
-        url: location.href,
-        path: location.pathname,
-        viewport: `${innerWidth}x${innerHeight}`,
-        dpr: devicePixelRatio,
-        ua: navigator.userAgent,
-        build: document.querySelector<HTMLMetaElement>('meta[name="build"]')?.content ?? '',
-        selection: currentSelection(),
-        id: feedbackId(),
-      },
-      options,
-    );
+    link.href = transport.href(capture.context());
   };
 
-  document.addEventListener('selectionchange', onSelectionChange);
   link.addEventListener('click', update);
   update();
   // Open the mail app from this tab. A mailto: in a new tab (target="_blank") counts
@@ -74,7 +49,7 @@ export function initFeedbackLink(link: HTMLAnchorElement, options: FeedbackOptio
   link.removeAttribute('target');
   link.hidden = false;
   return () => {
-    document.removeEventListener('selectionchange', onSelectionChange);
+    capture.stop();
     link.removeEventListener('click', update);
   };
 }
