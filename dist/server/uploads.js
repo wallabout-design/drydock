@@ -10,7 +10,7 @@
 //
 // The bucket and the images binding are described by the few methods used, so
 // a site passes its R2 bucket and `IMAGES` binding as they are and tests pass fakes.
-import { cropSegment, renditionWidths } from '../core/image.js';
+import { cropSegment, imageSources, renditionWidths } from '../core/image.js';
 import { LIMITS } from '../core/limits.js';
 import { checkCrop, UPLOAD_KEY } from '../core/validate.js';
 /** The biggest original, in bytes. */
@@ -217,6 +217,42 @@ export function createUploadRoutes(content, options, json) {
                 return json(502, { error: 'resize-failed', message: `The ${width} px size could not be made as a WebP image. Please try again.` });
             await bucket.put(target, new Uint8Array(await made.arrayBuffer()), { httpMetadata: { contentType: 'image/webp', cacheControl: RENDITION_CACHE } });
             return json(200, { key: target, made: true });
+        },
+        async sizes(body) {
+            const malformed = () => json(400, { error: 'malformed', message: 'The editor sent something this site did not understand. Reload the page and try again.' });
+            if (typeof body !== 'object' || body === null || Array.isArray(body))
+                return malformed();
+            const { key, list, field: fieldName, crop } = body;
+            if (typeof key !== 'string' || typeof list !== 'string' || typeof fieldName !== 'string')
+                return malformed();
+            const field = imageField(list, fieldName);
+            if (!field)
+                return unknownField();
+            const original = await readOriginal(bucket, key, list, fieldName);
+            if (!original)
+                return json(404, { error: 'unknown-upload', message: 'That image was not uploaded for this field. Please choose it again.' });
+            const checked = checkCrop(field, crop === null ? undefined : crop, original.width, original.height);
+            if ('problem' in checked)
+                return json(422, { error: 'invalid', message: checked.problem.message });
+            const upload = { key, alt: '', width: original.width, height: original.height, ...(checked.crop ? { crop: checked.crop } : {}) };
+            const { widths, full } = renditionWidths(field, upload);
+            const shown = imageSources(field, upload, { prefix: options.prefix ?? DEFAULT_MEDIA_PREFIX });
+            const largest = shown.srcset.split(', ').pop().split(' ')[0];
+            return json(200, { sizes: [...widths, ...(full === undefined ? [] : [full])], preview: largest, width: original.width, height: original.height });
+        },
+        async original(query) {
+            const key = query.get('key');
+            const list = query.get('list');
+            const field = query.get('field');
+            if (key === null || list === null || field === null || !imageField(list, field))
+                return unknownField();
+            const found = await readOriginal(bucket, key, list, field);
+            const object = found ? await bucket.get(originalKey(key)) : null;
+            const type = object?.customMetadata?.contentType;
+            if (!object || (type !== 'image/jpeg' && type !== 'image/png' && type !== 'image/webp')) {
+                return json(404, { error: 'unknown-upload', message: 'That image was not uploaded for this field. Please choose it again.' });
+            }
+            return new Response(object.body, { status: 200, headers: { 'content-type': type, 'cache-control': 'private, max-age=600', 'x-content-type-options': 'nosniff' } });
         },
         async settle(list, values) {
             const problems = [];

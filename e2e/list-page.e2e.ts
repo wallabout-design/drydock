@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { nextControl } from './keys.js';
 import { AUTO, REVIEW } from './ports.js';
 
 // The list page and the item form in a real browser, against the fixture site
@@ -204,6 +205,7 @@ test.describe('move', () => {
     await expect(page.locator('[data-item="porch"] button:focus')).toHaveCount(1);
 
     await page.getByRole('button', { name: 'undo' }).click();
+    await expect(titles(page)).toHaveText(['Attic', 'Porch', 'Blue room']);
     // The click answers before the server has applied the undo: wait for the store, don't read it once.
     await expect.poll(() => ids(page)).toEqual(['attic', 'porch', 'blue']);
   });
@@ -340,7 +342,7 @@ test.describe('limits and keyboard', () => {
   test('add a room with the keyboard alone', async ({ page }) => {
     await open(page);
     for (let presses = 0; presses < 30 && !(await addRoom(page).evaluate((el) => el === document.activeElement)); presses++) {
-      await page.keyboard.press('Tab');
+      await nextControl(page);
     }
     await expect(addRoom(page)).toBeFocused();
     await page.keyboard.press('Enter');

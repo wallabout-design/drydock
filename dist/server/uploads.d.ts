@@ -110,6 +110,10 @@ export interface UploadRoutes {
     upload(request: Request, query: URLSearchParams, now: Date): Promise<Response>;
     /** The renditions route's work, given the parsed JSON body. */
     rendition(body: unknown): Promise<Response>;
+    /** The sizes that saving an upload will ask for, given the parsed JSON body `{ key, list, field, crop? }`, and the address of the largest. */
+    sizes(body: unknown): Promise<Response>;
+    /** A stored original, for staff to change its crop: `?key=&list=&field=`. */
+    original(query: URLSearchParams): Promise<Response>;
     /** Checks the uploads in an item's values, and takes their size from the stored original. */
     settle(list: string, values: ItemValues): Promise<{
         values: ItemValues;

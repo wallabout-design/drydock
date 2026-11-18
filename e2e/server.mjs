@@ -5,7 +5,7 @@
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
-import { ACCESS_HEADER, createEditor } from '../dist/server/index.js';
+import { ACCESS_HEADER, createEditor, serveMedia } from '../dist/server/index.js';
 
 const port = Number(process.argv[2]);
 const mode = process.argv[3] === 'review' ? 'review' : 'auto';
@@ -45,6 +45,7 @@ const declare = (photo = {}) => defineContent({
           ],
         },
         { name: 'photo', label: 'Photo', type: 'image', ...photo },
+        { name: 'banner', label: 'Banner', type: 'image', aspect: '3:2', widths: [200, 400], full: 800, minWidth: 600 },
       ],
     },
   ],
@@ -97,33 +98,51 @@ const token = (email) =>
     .setExpirationTime('1h')
     .sign(pair.privateKey);
 
-// A stand-in for the site's R2 bucket and `IMAGES` binding (the package takes both as arguments).
-const objects = new Map();
+// A bucket and an images service that live in memory. The images service reads a
+// PNG's real size from its header and "makes" a size by answering a few bytes of
+// WebP, so the tests can see what was asked for. /__test/failnext makes the next
+// size fail, as the service would when it is down.
+// A real 1 by 1 WebP, so a browser can show a made size.
+const TINY_WEBP = Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==', 'base64');
+let objects = new Map();
+let calls = [];
+let failNext = 0;
+const allowance = { exhausted: false, left: null };
 const bucket = {
   async head(key) {
     const o = objects.get(key);
-    return o ? { size: 1, customMetadata: o.customMetadata } : null;
+    return o ? { size: o.value.length, customMetadata: o.customMetadata } : null;
   },
   async get(key) {
     const o = objects.get(key);
-    return o ? { size: 1, customMetadata: o.customMetadata, body: new Blob(['x']).stream() } : null;
+    return o ? { size: o.value.length, customMetadata: o.customMetadata, body: new Blob([o.value]).stream() } : null;
   },
-  async put(key, _value, options) {
-    objects.set(key, { customMetadata: options?.customMetadata });
+  async put(key, value, options) {
+    objects.set(key, { value: new Uint8Array(value), ...options });
   },
 };
-const allowance = { exhausted: false, left: null };
 const images = {
-  async info() {
-    return { format: 'image/jpeg', width: 4000, height: 3000 };
+  async info(stream) {
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    const view = new DataView(bytes.buffer, bytes.byteOffset);
+    return { format: 'image/png', width: view.getUint32(16), height: view.getUint32(20) };
   },
   input() {
+    const call = {};
     const t = {
-      transform: () => t,
+      transform(o) {
+        Object.assign(call, o);
+        return t;
+      },
       async output() {
         if (allowance.exhausted || allowance.left === 0) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
         if (allowance.left !== null) allowance.left -= 1;
-        return { response: () => new Response('webp', { headers: { 'content-type': 'image/webp' } }) };
+        if (failNext > 0) {
+          failNext--;
+          throw new Error('the images service is down');
+        }
+        calls.push(call);
+        return { response: () => new Response(TINY_WEBP, { headers: { 'content-type': 'image/webp' } }) };
       },
     };
     return t;
@@ -132,11 +151,15 @@ const images = {
 
 let store;
 let editor;
-function reset(photo = {}, initial = START()) {
-  store = fakeStore({ initial });
+function reset(photo = {}, initial = START(), keepBucket = false) {
+  if (!keepBucket) objects = new Map();
+  calls = [];
+  failNext = 0;
   allowance.exhausted = false;
   allowance.left = null;
+  store = fakeStore({ initial });
   editor = createEditor({
+    uploads: { bucket, images },
     content: declare(photo),
     store,
     mode,
@@ -168,6 +191,18 @@ createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === '/__test/state') return send(200, await store.read());
+  if (url.pathname === '/__test/bucket') {
+    return send(200, { keys: [...objects.keys()], calls, originals: [...objects].filter(([k]) => k.startsWith('originals/')).map(([k, o]) => ({ key: k, size: o.value.length, ...o.customMetadata })) });
+  }
+  if (url.pathname === '/__test/failnext') {
+    failNext = Number(url.searchParams.get('count') ?? 1);
+    return send(200, {});
+  }
+  if (url.pathname.startsWith('/media/')) {
+    const made = await serveMedia(new Request(url, { method: req.method }), bucket);
+    res.writeHead(made.status, Object.fromEntries(made.headers));
+    return res.end(Buffer.from(await made.arrayBuffer()));
+  }
   if (url.pathname === '/__test/reset') {
     reset();
     return send(200, {});
@@ -175,19 +210,19 @@ createServer(async (req, res) => {
   if (url.pathname === '/__test/uploads') {
     // Starts over with rooms that hold uploaded photos (their originals are in the bucket) and a photo field as declared.
     const { rooms, photo } = JSON.parse(body.toString());
-    objects.clear();
+    objects = new Map();
     const list = rooms.map(({ id, n, crop }) => {
       const key = `2026/11/${String(n).padStart(24, 'a')}`;
-      objects.set(`originals/${key}`, { customMetadata: { list: 'rooms', field: 'photo', width: '4000', height: '3000' } });
+      objects.set(`originals/${key}`, { value: new Uint8Array([1]), customMetadata: { list: 'rooms', field: 'photo', width: '4000', height: '3000' } });
       return { id, values: { title: id, photo: { key, alt: 'a room', width: 4000, height: 3000, ...(crop ? { crop } : {}) } } };
     });
-    reset(photo, { texts: START().texts, lists: { rooms: list } });
+    reset(photo, { texts: START().texts, lists: { rooms: list } }, true);
     return send(200, {});
   }
   if (url.pathname === '/__test/declare') {
     // The site is deployed again with the photo field changed; the store and the bucket stay.
     const keep = await store.read();
-    reset(JSON.parse(body.toString()), keep);
+    reset(JSON.parse(body.toString()), keep, true);
     return send(200, {});
   }
   if (url.pathname === '/__test/allowance') {
