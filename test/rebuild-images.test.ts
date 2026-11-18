@@ -188,12 +188,17 @@ describe('which sizes are missing', () => {
 
   it('works through a long list in bounded runs that cover every item once', async () => {
     const items = Array.from({ length: 30 }, (_, n) => room(`r${n}`, n + 1));
-    const s = setup(items, { widths: [400, 800, 1200] });
+    const s = setup(items, { widths: [400, 800, 1200, 1600], full: 2400 });
+    let heads = 0;
+    const head = s.b.bucket.head.bind(s.b.bucket);
+    s.b.bucket.head = (key) => ((heads += 1), head(key));
     const seen: string[] = [];
     let offset: number | null = 0;
     let runs = 0;
     while (offset !== null) {
+      heads = 0;
       const run: Awaited<ReturnType<typeof missing>> = await missing(s.editor, offset);
+      expect(heads).toBeLessThanOrEqual(HEAD_BUDGET);
       expect(run.offset).toBe(offset);
       seen.push(...run.missing.map((t) => `${t.item}/${t.width}`));
       offset = run.next;
@@ -201,10 +206,8 @@ describe('which sizes are missing', () => {
     }
     expect(runs).toBeGreaterThan(1);
     expect(runs).toBeLessThanOrEqual(30);
-    expect(seen).toHaveLength(90);
-    expect(new Set(seen).size).toBe(90);
-    // One run never spends more heads than the budget plus the item it finished.
-    expect(HEAD_BUDGET).toBeGreaterThan(0);
+    expect(seen).toHaveLength(150);
+    expect(new Set(seen).size).toBe(150);
   });
 });
 

@@ -174,8 +174,27 @@ export interface MissingReport {
   problems: RenditionProblem[];
 }
 
-/** Heads one check request may spend (a Worker request can make only so many subrequests); it always finishes the item it is on. */
+/**
+ * Heads one check request may spend: a Worker on the free plan makes at most
+ * 50 subrequests, and the request also reads the store. A run starts an item
+ * only when the item's most heads fit in what is left, except the run's first
+ * item, which it always checks so the page moves on.
+ */
 export const HEAD_BUDGET = 40;
+
+/**
+ * The most heads checking one item can take: per image field, the original,
+ * every declared width, and one more size (the original's own width when it is
+ * narrower than the widest, or the lightbox size when it is wider, never both).
+ */
+function mostHeads(fields: readonly ImageField[], values: ItemValues): number {
+  let heads = 0;
+  for (const field of fields) {
+    const value = values[field.name];
+    if (typeof value === 'object' && value !== null && 'key' in value) heads += 1 + (field.widths ?? LIMITS.image.defaultWidths).length + 1;
+  }
+  return heads;
+}
 
 export interface UploadRoutes {
   /** Which sizes the items of a list need and lack, from `offset`, within a bounded number of heads. */
@@ -208,8 +227,9 @@ export function createUploadRoutes(content: Content, options: UploadsOptions, js
       const report: MissingReport = { list: listName, items: items.length, offset, next: null, needed: 0, missing: [], problems: [] };
       let budget = HEAD_BUDGET;
       let at = offset;
-      while (at < items.length && budget > 0) {
+      while (at < items.length) {
         const item = items[at] as ListItem;
+        if (at > offset && mostHeads(fields, item.values) > budget) break;
         at += 1;
         const rawTitle = list ? item.values[list.titleField] : undefined;
         const title = typeof rawTitle === 'string' && rawTitle !== '' ? rawTitle : item.id;

@@ -101,7 +101,12 @@ export interface MissingReport {
     missing: RenditionTask[];
     problems: RenditionProblem[];
 }
-/** Heads one check request may spend (a Worker request can make only so many subrequests); it always finishes the item it is on. */
+/**
+ * Heads one check request may spend: a Worker on the free plan makes at most
+ * 50 subrequests, and the request also reads the store. A run starts an item
+ * only when the item's most heads fit in what is left, except the run's first
+ * item, which it always checks so the page moves on.
+ */
 export declare const HEAD_BUDGET = 40;
 export interface UploadRoutes {
     /** Which sizes the items of a list need and lack, from `offset`, within a bounded number of heads. */
