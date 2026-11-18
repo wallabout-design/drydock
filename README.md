@@ -43,7 +43,7 @@ The git store loads the same way, from `@wallabout-design/drydock/stores/git`. E
 
 ## Writing a store
 
-A store keeps a site's content and its changes somewhere. It is an object that implements `Store` (`src/core/store.ts`) with six methods: `read`, `submit`, `approve`, `reject`, `undo` and `list`. The rules every store keeps:
+A store keeps a site's content and its changes somewhere. It is an object that implements `Store` (`src/core/store.ts`) with six methods: `read`, `submit`, `approve`, `reject`, `undo` and `list`, and a `capabilities` object. `goesLive` is `at-once`, or `after-checks` when a change goes live later, once the checks pass; `history` is a number of changes, or `all`. The edit view and the Changes page say when a save is live from `goesLive`. The rules every store keeps:
 
 - It refuses a stale change whole: if anything the editor last saw has moved on, nothing is applied.
 - An undo is a new live change that puts the content back; the change it undid stays in the history.

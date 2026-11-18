@@ -55,6 +55,10 @@ const ok = (outcome: Outcome): Change => {
 };
 const mainFiles = (repo: FakeRepo) => repo.filesAt('main');
 
+it('the git store declares that a change goes live after the checks, and keeps all its history', () => {
+  expect(storeOn(repoWith(INITIAL)).capabilities).toEqual({ goesLive: 'after-checks', history: 'all' });
+});
+
 describe('git store files', () => {
   it('writes fixed formatting: only edited texts, sorted; fields in declared order; position first', () => {
     const state: ContentState = {

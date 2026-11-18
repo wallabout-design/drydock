@@ -56,7 +56,16 @@ export interface ChangePage {
     /** Pass as `cursor` for the next page, or null when this is the last. */
     next: string | null;
 }
+/** What a store does with a change once it is accepted: the edit view says so, without checking which store it is. */
+export interface StoreCapabilities {
+    /** `at-once`: an accepted change is live when it is saved. `after-checks`: it goes live a few minutes later, once the site's checks pass. */
+    goesLive: 'at-once' | 'after-checks';
+    /** How many changes are kept to undo or look back at: a number, or `all`. */
+    history: number | 'all';
+}
 export interface Store {
+    /** What this store does with a change; see StoreCapabilities. */
+    readonly capabilities: StoreCapabilities;
     /** All texts and lists, as they are live now. */
     read(): Promise<ContentState>;
     /** Refuses the whole change if any "last saw" is stale; otherwise waits (`review`) or goes live (`auto`). */

@@ -13,6 +13,10 @@
 
 const settings = JSON.parse(document.getElementById('editor-settings')?.textContent ?? '{}');
 const review = settings.mode === 'review';
+// When a saved change is live, as the store says (settings.capabilities.goesLive, see StoreCapabilities).
+const liveLine = settings.capabilities?.goesLive === 'after-checks' ? 'It’s live in a few minutes, after checks.' : 'It’s on the site now.';
+/** True while a saved change is not on the site yet: always in review, and in auto when the store waits for checks. */
+const queuedChange = (change) => review || change.state === 'waiting';
 
 /** Plain text on one line: one space between words, none at the ends. */
 const tidy = (text) => text.replace(/\s+/g, ' ').trim();
@@ -433,13 +437,14 @@ async function save() {
 
   if (status === 200 && body.change) {
     const texts = new Map(body.change.ops.map((o) => [o.key, o.text]));
+    const queued = queuedChange(body.change);
     lastSave = null;
     for (const { key, after } of sent) {
       const text = texts.get(key) ?? after;
       shown.set(key, text);
       pending.delete(key);
       put(key, text);
-      if (review) {
+      if (queued) {
         waiting.add(key);
         setState(key, 'waiting');
       } else {
@@ -450,8 +455,8 @@ async function save() {
     }
     if (review) say('Saved. It will appear on the site once an admin approves it.', 'saved');
     else {
-      lastSave = { id: body.change.id };
-      say('Saved. It’s on the site now.', 'saved');
+      if (!queued) lastSave = { id: body.change.id };
+      say(`Saved. ${liveLine}`, 'saved');
     }
   } else if (status === 409 && body.error === 'stale') {
     const key = sent[body.index]?.key;
@@ -655,7 +660,7 @@ function markWaiting(entry, ops) {
 
 /** What staff are told once a list change is accepted. */
 function savedLine(done, extra = '') {
-  say(review ? `${done} It will appear on the site once an admin approves it.` : `${done} It’s on the site now.${extra}`, 'saved');
+  say(review ? `${done} It will appear on the site once an admin approves it.` : `${done} ${liveLine}${extra}`, 'saved');
 }
 
 /** Sends a change from an item's tools, then updates the page. */
@@ -667,7 +672,7 @@ async function runOps(entry, ops, done, focus) {
     say(result.problems.map((p) => p.message).join(' '), 'problem');
     return drawTools(entry, focus);
   }
-  if (review) markWaiting(entry, ops);
+  if (queuedChange(result.change)) markWaiting(entry, ops);
   else applyLive(entry, result.change.ops);
   drawTools(entry, focus);
   savedLine(done);
@@ -754,7 +759,8 @@ async function openForm(entry, item) {
       const saved = result.change.ops[0];
       const title = titleOf(decl, saved.values);
       let extra = '';
-      if (review) {
+      const queued = queuedChange(result.change);
+      if (queued) {
         if (item) markWaiting(entry, ops);
       } else {
         entry.retitled = false;
@@ -766,7 +772,7 @@ async function openForm(entry, item) {
           else extra = ' Reload the page to see it here.';
         } else if (!entry.retitled) extra = ' Reload the page to see how it looks.';
       }
-      close(item ? { id, action: 'edit' } : { id: review ? null : id, action: 'edit' });
+      close(item ? { id, action: 'edit' } : { id: queued ? null : id, action: 'edit' });
       savedLine(`${item ? 'Changed' : 'Added'} “${title}”.`, extra);
     },
   });

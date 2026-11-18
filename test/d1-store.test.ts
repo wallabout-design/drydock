@@ -10,6 +10,10 @@ storeContract((initial) => d1Store(testDb(initial)));
 const rows = (db: ReturnType<typeof testDb>, sql: string): Record<string, unknown>[] => db.sqlite.prepare(sql).all() as Record<string, unknown>[];
 
 describe('d1Store', () => {
+  it('declares that it puts a change live at once, keeping the history it keeps', () => {
+    expect(d1Store(testDb()).capabilities).toEqual({ goesLive: 'at-once', history: HISTORY_KEPT });
+  });
+
   it('stamps changes with the clock and names who decided', async () => {
     const store = d1Store(testDb(structuredClone(INITIAL)), { now: () => '2026-11-15T10:00:00.000Z' });
     const outcome = await store.submit({ ops: [{ op: 'setText', key: 'home.title', seen: 'Hello', text: 'Hi' }], by: 'ana' }, 'review');

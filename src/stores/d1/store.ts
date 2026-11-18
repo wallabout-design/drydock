@@ -258,6 +258,8 @@ export function d1Store(db: D1Like, options: D1Options = {}): Store {
     applied.reason === 'stale' ? stale(loaded, applied.index) : refuse({ reason: 'invalid', message: applied.message });
 
   return {
+    capabilities: { goesLive: 'at-once', history: HISTORY_KEPT },
+
     async read() {
       return (await load()).state;
     },

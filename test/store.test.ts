@@ -6,6 +6,10 @@ import { INITIAL, storeContract } from '../src/testing/index.js';
 storeContract((initial) => fakeStore({ initial }));
 
 describe('fakeStore', () => {
+  it('declares that it puts a change live at once, with 50 changes of history', () => {
+    expect(fakeStore().capabilities).toEqual({ goesLive: 'at-once', history: 50 });
+  });
+
   it('starts empty when given no content', async () => {
     expect(await fakeStore().read()).toEqual({ texts: {}, lists: {} });
   });
