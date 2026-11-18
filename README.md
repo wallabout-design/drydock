@@ -39,6 +39,24 @@ Install both tools locally with `brew install gitleaks osv-scanner`. CI installs
 
 `d1Store(db, { content })` from `@wallabout-design/drydock/server` keeps content in a site's D1. Copy `node_modules/@wallabout-design/drydock/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
 
+## Writing a store
+
+A store keeps a site's content and its changes somewhere. It is an object that implements `Store` (`src/core/store.ts`) with six methods: `read`, `submit`, `approve`, `reject`, `undo` and `list`. The rules every store keeps:
+
+- It refuses a stale change whole: if anything the editor last saw has moved on, nothing is applied.
+- An undo is a new live change that puts the content back; the change it undid stays in the history.
+- It never trusts the browser's checks. It validates every operation itself.
+
+`@wallabout-design/drydock/testing` exports the contract every store must pass. It needs `vitest` (an optional peer dependency). In the store's own test file:
+
+```ts
+import { storeContract } from '@wallabout-design/drydock/testing';
+
+storeContract(() => myStore());
+```
+
+`d1Store` (`test/d1-store.test.ts`) and the git store (`test/git-store.test.ts`) are worked examples.
+
 ## Uploaded images
 
 An image field can hold an upload. The original is kept untouched in the site's R2 bucket, and the sizes a page needs are made from it by the site's Worker, only from `/admin` when staff save, with Cloudflare's `IMAGES` binding and its free allowance. The public route only reads files that exist, so a visitor can't spend the allowance. Sizes are WebP, and also AVIF where the size has at most 1 million pixels (the images service answers WebP above that, so a larger size has no AVIF file and no AVIF address on the page). `/media/` answers an AVIF address whose AVIF file is not there with the WebP of the same size (`image/webp`, cached for an hour), so sizes made before AVIF existed, and sizes the service can't make as AVIF, still show. The rebuild page counts a size missing until its AVIF is made, and a size the service can't make as AVIF gets a marker so it isn't asked for again.
