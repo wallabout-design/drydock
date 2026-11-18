@@ -1,0 +1,57 @@
+/* The dock's only styles. Each site themes it with CSS variables, as it did the feedback link:
+   --dock-bg, --dock-fg, --dock-border, --dock-font, --dock-offset (distance from the corner),
+   --dock-z, and --dock-reserve (the space the page keeps clear at the bottom while the launcher shows).
+   Nothing here applies until the dock has put something in its root. */
+[data-dock] {
+  position: fixed;
+  right: var(--dock-offset, 16px);
+  bottom: var(--dock-offset, 16px);
+  z-index: var(--dock-z, 1000);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  font: var(--dock-font, 16px/1.5 system-ui, sans-serif);
+  color: var(--dock-fg, #000);
+}
+.dock-launcher,
+.dock-panel {
+  background: var(--dock-bg, #fff);
+  color: var(--dock-fg, #000);
+  border: 1px solid var(--dock-border, currentColor);
+  border-radius: 0;
+}
+.dock-launcher {
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.dock-panel {
+  padding: 12px;
+  max-width: min(320px, calc(100vw - 2 * var(--dock-offset, 16px)));
+}
+.dock-panel[hidden] {
+  display: none;
+}
+.dock-heading {
+  margin: 0 0 4px;
+  font: inherit;
+  font-weight: 600;
+}
+.dock-section + .dock-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dock-border, currentColor);
+}
+.dock-link {
+  color: inherit;
+}
+.dock-launcher:focus-visible,
+.dock-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+/* Keep the page's bottom-right corner clear while the launcher shows. --feedback-reserve is the old name, kept until 1.0. */
+body:has([data-dock-launcher]) {
+  padding-bottom: var(--dock-reserve, var(--feedback-reserve, 64px));
+}
