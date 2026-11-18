@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DeclarationError, defineContent, fullSrc, imageMarkup, imageSources, type Field, type ImageField, type ImageUpload, type ImageValue } from '../src/index.js';
+import { avifFits, DeclarationError, defineContent, fullSrc, imageMarkup, imageSources, type Field, type ImageField, type ImageUpload, type ImageValue } from '../src/index.js';
 import { Image } from '../src/react/index.js';
 
 const title: Field = { name: 'title', label: 'Title', type: 'text', required: true };
@@ -147,7 +147,7 @@ describe('imageMarkup', () => {
   const upload = (over: Partial<ImageUpload> = {}): ImageUpload => ({ key: KEY, alt: 'A "quoted" <b>shot</b> & more', width: 1200, height: 600, ...over });
   const dark = (over: Partial<ImageUpload> = {}): ImageValue => ({ key: '2026/11/zyxwvutsrqponmlkjihgfed', alt: 'dark', width: 1200, height: 600, ...over });
 
-  it('gives an upload its srcset, sizes and shape, with the alt text as given', () => {
+  it('gives an upload its srcset, sizes and shape, with the alt text as given, and an AVIF source before the img', () => {
     expect(imageMarkup(field(), upload())).toEqual({
       img: {
         src: `/media/${KEY}/whole/960.webp`,
@@ -157,27 +157,62 @@ describe('imageMarkup', () => {
         height: 600,
         alt: 'A "quoted" <b>shot</b> & more',
       },
+      sources: [{ type: 'image/avif', srcset: `/media/${KEY}/whole/480.avif 480w, /media/${KEY}/whole/960.avif 960w, /media/${KEY}/whole/1200.avif 1200w`, sizes: '100vw' }],
     });
   });
   it('gives an address value only src and alt', () => {
-    expect(imageMarkup(field(), { src: 'https://example.com/a.jpg', alt: 'Plain' })).toEqual({ img: { src: 'https://example.com/a.jpg', alt: 'Plain' } });
+    expect(imageMarkup(field(), { src: 'https://example.com/a.jpg', alt: 'Plain' })).toEqual({ img: { src: 'https://example.com/a.jpg', alt: 'Plain' }, sources: [] });
   });
   it('gives alt="" for a decorative field, whatever the value holds', () => {
     expect(imageMarkup(field({ decorative: true }), upload()).img.alt).toBe('');
     expect(imageMarkup(field({ decorative: true }), { src: '/a.jpg', alt: 'x' }).img.alt).toBe('');
   });
-  it('adds a dark source with its own srcset and sizes, and keeps the light image', () => {
+  it('adds dark sources (AVIF, then WebP) before the light AVIF, and keeps the light image', () => {
     const m = imageMarkup(field({ sizes: '50vw', widths: [400] }), upload({ width: 400, height: 200 }), { dark: dark({ width: 400, height: 200 }) });
-    expect(m.dark).toEqual({ media: '(prefers-color-scheme: dark)', srcset: '/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w', sizes: '50vw' });
+    expect(m.sources).toEqual([
+      { media: '(prefers-color-scheme: dark)', type: 'image/avif', srcset: '/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.avif 400w', sizes: '50vw' },
+      { media: '(prefers-color-scheme: dark)', srcset: '/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w', sizes: '50vw' },
+      { type: 'image/avif', srcset: `/media/${KEY}/whole/400.avif 400w`, sizes: '50vw' },
+    ]);
     expect(m.img.src).toBe(`/media/${KEY}/whole/400.webp`);
   });
-  it('gives a dark address value a plain srcset of its src', () => {
-    expect(imageMarkup(field(), upload(), { dark: { src: '/dark.jpg', alt: 'x' } }).dark).toEqual({ media: '(prefers-color-scheme: dark)', srcset: '/dark.jpg' });
+  it('gives a dark address value a plain srcset of its src, before the light AVIF', () => {
+    const m = imageMarkup(field(), upload(), { dark: { src: '/dark.jpg', alt: 'x' } });
+    expect(m.sources[0]).toEqual({ media: '(prefers-color-scheme: dark)', srcset: '/dark.jpg' });
+    expect(m.sources[1]).toEqual({ type: 'image/avif', srcset: expect.stringContaining(`/media/${KEY}/whole/480.avif`), sizes: '100vw' });
+  });
+  it('gives no AVIF source for a size too big for AVIF, and none at all when no size fits', () => {
+    expect(imageMarkup(field({ widths: [1600] }), upload({ width: 3000, height: 2000 })).sources).toEqual([]);
+    const m = imageMarkup(field(), upload({ width: 3000, height: 2000 }));
+    expect(m.sources).toEqual([{ type: 'image/avif', srcset: `/media/${KEY}/whole/480.avif 480w, /media/${KEY}/whole/960.avif 960w`, sizes: '100vw' }]);
   });
   it('uses the prefix for every address', () => {
     const m = imageMarkup(field({ widths: [400] }), upload({ width: 400, height: 200 }), { prefix: 'https://cdn.example.com/m/', dark: dark({ width: 400, height: 200 }) });
     expect(m.img.src).toBe(`https://cdn.example.com/m/${KEY}/whole/400.webp`);
-    expect(m.dark?.srcset).toBe('https://cdn.example.com/m/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w');
+    expect(m.sources[0]?.srcset).toBe('https://cdn.example.com/m/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.avif 400w');
+    expect(m.sources[1]?.srcset).toBe('https://cdn.example.com/m/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w');
+  });
+});
+
+describe('AVIF sizes', () => {
+  const field = (over: Partial<ImageField> = {}): ImageField => ({ name: 'pic', label: 'Picture', type: 'image', ...over });
+  it('makes AVIF up to 1 million pixels, inclusive', () => {
+    expect(avifFits(1000, 1000)).toBe(true);
+    expect(avifFits(1000, 1001)).toBe(false);
+    expect(avifFits(800, 1200)).toBe(true);
+  });
+  it('lists the AVIF addresses of the sizes that fit, and no others', () => {
+    const s = imageSources(field(), upload({ width: 3000, height: 2000 }));
+    expect('srcset' in s && s.avifSrcset).toBe(`/media/${KEY}/whole/480.avif 480w, /media/${KEY}/whole/960.avif 960w`);
+    expect('srcset' in s && s.srcset).toContain('/media/' + KEY + '/whole/1600.webp 1600w');
+  });
+  it('lists no AVIF addresses when no size fits', () => {
+    const s = imageSources(field({ widths: [1600] }), upload({ width: 3000, height: 2000 }));
+    expect('srcset' in s && s.avifSrcset).toBeUndefined();
+  });
+  it('gives the AVIF addresses of a cropped size by the crop’s shape', () => {
+    const s = imageSources(field({ widths: [400] }), upload({ width: 3000, height: 3000, crop: { x: 0, y: 0, w: 2000, h: 1000 } }));
+    expect('srcset' in s && s.avifSrcset).toBe(`/media/${KEY}/c0-0-2000-1000/400.avif 400w`);
   });
 });
 
@@ -201,19 +236,22 @@ describe('the React Image', () => {
   const field: ImageField = { name: 'pic', label: 'Picture', type: 'image', widths: [400] };
   const shot = { key: KEY, alt: 'Shot', width: 400, height: 200 };
 
-  it('renders an upload as an img with srcset and sizes', () => {
+  it('renders an upload as a picture with an AVIF source, then the img with srcset and sizes', () => {
     const html = renderToStaticMarkup(createElement(Image, { field, value: shot, className: 'hero', loading: 'lazy' }));
-    expect(html).toBe(`<img src="/media/${KEY}/whole/400.webp" srcSet="/media/${KEY}/whole/400.webp 400w" sizes="100vw" width="400" height="200" alt="Shot" loading="lazy" class="hero"/>`);
+    expect(html).toBe(
+      `<picture><source type="image/avif" srcSet="/media/${KEY}/whole/400.avif 400w" sizes="100vw"/><img src="/media/${KEY}/whole/400.webp" srcSet="/media/${KEY}/whole/400.webp 400w" sizes="100vw" width="400" height="200" alt="Shot" loading="lazy" class="hero"/></picture>`,
+    );
   });
   it('renders an address as a plain img, and escapes its address and alt', () => {
     const html = renderToStaticMarkup(createElement(Image, { field, value: { src: '/a.jpg?x="1"&y=2', alt: 'a "b" <c>' } }));
     // React 19 adds a preload link ahead of a plain image; the img itself is what matters here.
     expect(html).toContain('<img src="/a.jpg?x=&quot;1&quot;&amp;y=2" alt="a &quot;b&quot; &lt;c&gt;"/>');
   });
-  it('renders a dark pair as a picture with a dark source before the img', () => {
+  it('renders a dark pair as a picture with the dark sources before the light AVIF and the img', () => {
     const html = renderToStaticMarkup(createElement(Image, { field: { ...field, decorative: true }, value: shot, dark: { key: '2026/11/zyxwvutsrqponmlkjihgfed', alt: 'd', width: 400, height: 200 } }));
+    const dark = '/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400';
     expect(html).toBe(
-      `<picture><source media="(prefers-color-scheme: dark)" srcSet="/media/2026/11/zyxwvutsrqponmlkjihgfed/whole/400.webp 400w" sizes="100vw"/><img src="/media/${KEY}/whole/400.webp" srcSet="/media/${KEY}/whole/400.webp 400w" sizes="100vw" width="400" height="200" alt=""/></picture>`,
+      `<picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcSet="${dark}.avif 400w" sizes="100vw"/><source media="(prefers-color-scheme: dark)" srcSet="${dark}.webp 400w" sizes="100vw"/><source type="image/avif" srcSet="/media/${KEY}/whole/400.avif 400w" sizes="100vw"/><img src="/media/${KEY}/whole/400.webp" srcSet="/media/${KEY}/whole/400.webp 400w" sizes="100vw" width="400" height="200" alt=""/></picture>`,
     );
   });
 });

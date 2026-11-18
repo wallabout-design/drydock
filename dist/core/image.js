@@ -4,6 +4,14 @@ import { LIMITS } from './limits.js';
 export function cropSegment(crop) {
     return crop === undefined ? 'whole' : `c${crop.x}-${crop.y}-${crop.w}-${crop.h}`;
 }
+/** The height of a size of `width` pixels, for an image shown `shownWidth` by `shownHeight` (the crop, or the whole image). */
+export function renditionHeight(shownWidth, shownHeight, width) {
+    return Math.round((width * shownHeight) / shownWidth);
+}
+/** True when a size of this many pixels is also made as AVIF: small enough that the images service always answers AVIF for it. */
+export function avifFits(width, height) {
+    return width * height <= LIMITS.image.avifMaxPixels;
+}
 /**
  * The widths that may be made for an upload (ascending), and the lightbox width when there is one.
  * The page's addresses and the upload route's list of allowed widths both come from here.
@@ -28,15 +36,18 @@ export function imageSources(field, value, options = {}) {
     const available = crop?.w ?? value.width;
     const shownHeight = crop?.h ?? value.height;
     const { widths, full } = renditionWidths(field, value);
-    const address = (w) => `${prefix}${value.key}/${from}/${w}.webp`;
+    const address = (w, format = 'webp') => `${prefix}${value.key}/${from}/${w}.${format}`;
     const top = widths[widths.length - 1];
+    const avif = widths.filter((w) => avifFits(w, renditionHeight(available, shownHeight, w)));
     const result = {
         src: address(widths[Math.floor((widths.length - 1) / 2)]),
         srcset: widths.map((w) => `${address(w)} ${w}w`).join(', '),
         sizes: field.sizes ?? '100vw',
         width: top,
-        height: Math.round((top * shownHeight) / available),
+        height: renditionHeight(available, shownHeight, top),
     };
+    if (avif.length > 0)
+        result.avifSrcset = avif.map((w) => `${address(w, 'avif')} ${w}w`).join(', ');
     if (full !== undefined)
         result.full = address(full);
     return result;
@@ -51,11 +62,21 @@ export function imageMarkup(field, value, options = {}) {
     const shown = imageSources(field, value, { prefix: options.prefix });
     const result = {
         img: 'srcset' in shown ? { src: shown.src, srcset: shown.srcset, sizes: shown.sizes, width: shown.width, height: shown.height, alt } : { src: shown.src, alt },
+        sources: [],
     };
     if (options.dark !== undefined) {
         const dark = imageSources(field, options.dark, { prefix: options.prefix });
-        result.dark = 'srcset' in dark ? { media: DARK_MEDIA, srcset: dark.srcset, sizes: dark.sizes } : { media: DARK_MEDIA, srcset: dark.src };
+        if ('srcset' in dark) {
+            if (dark.avifSrcset !== undefined)
+                result.sources.push({ media: DARK_MEDIA, type: 'image/avif', srcset: dark.avifSrcset, sizes: dark.sizes });
+            result.sources.push({ media: DARK_MEDIA, srcset: dark.srcset, sizes: dark.sizes });
+        }
+        else {
+            result.sources.push({ media: DARK_MEDIA, srcset: dark.src });
+        }
     }
+    if ('srcset' in shown && shown.avifSrcset !== undefined)
+        result.sources.push({ type: 'image/avif', srcset: shown.avifSrcset, sizes: shown.sizes });
     return result;
 }
 /** The media query for a dark colour scheme. It follows the device setting only. */

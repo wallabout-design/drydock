@@ -17,6 +17,10 @@ export declare const LIMITS: {
     };
     readonly fieldsPerList: 40;
     /** What an image field may declare, and the biggest original. */
+    /**
+     * A size is also made as AVIF only up to this many pixels. The images service answers WebP instead of
+     * AVIF above a count between 1 and 2 million (measured for #39), so 1 million is always AVIF.
+     */
     readonly image: {
         readonly minWidth: 16;
         readonly maxWidth: 2400;
@@ -24,6 +28,7 @@ export declare const LIMITS: {
         readonly defaultWidths: readonly [480, 960, 1600];
         readonly sizes: 200;
         readonly original: 12000;
+        readonly avifMaxPixels: 1000000;
     };
     /** One item as JSON, in bytes. */
     readonly itemBytes: number;

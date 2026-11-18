@@ -12,6 +12,8 @@ export interface UploadSources {
   /** The address for browsers that ignore `srcset`: the middle one. */
   src: string;
   srcset: string;
+  /** The AVIF addresses, for the sizes small enough to have one (see `avifFits`). Absent when there are none. */
+  avifSrcset?: string;
   /** The field's `sizes`, or `100vw`. */
   sizes: string;
   /** The shown shape, for the `<img>` attributes: the widest address, and the height that keeps the shape. */
@@ -24,6 +26,19 @@ export interface UploadSources {
 /** The part of a rendition's address that names the crop: `whole`, or `c<x>-<y>-<w>-<h>`. */
 export function cropSegment(crop: ImageCrop | undefined): string {
   return crop === undefined ? 'whole' : `c${crop.x}-${crop.y}-${crop.w}-${crop.h}`;
+}
+
+/** The formats a size is made in. WebP for every size; AVIF too, where `avifFits` says so. */
+export type RenditionFormat = 'webp' | 'avif';
+
+/** The height of a size of `width` pixels, for an image shown `shownWidth` by `shownHeight` (the crop, or the whole image). */
+export function renditionHeight(shownWidth: number, shownHeight: number, width: number): number {
+  return Math.round((width * shownHeight) / shownWidth);
+}
+
+/** True when a size of this many pixels is also made as AVIF: small enough that the images service always answers AVIF for it. */
+export function avifFits(width: number, height: number): boolean {
+  return width * height <= LIMITS.image.avifMaxPixels;
 }
 
 /**
@@ -58,15 +73,17 @@ export function imageSources(field: ImageField, value: ImageValue, options: Imag
   const available = crop?.w ?? value.width;
   const shownHeight = crop?.h ?? value.height;
   const { widths, full } = renditionWidths(field, value);
-  const address = (w: number): string => `${prefix}${value.key}/${from}/${w}.webp`;
+  const address = (w: number, format: RenditionFormat = 'webp'): string => `${prefix}${value.key}/${from}/${w}.${format}`;
   const top = widths[widths.length - 1] as number;
+  const avif = widths.filter((w) => avifFits(w, renditionHeight(available, shownHeight, w)));
   const result: UploadSources = {
     src: address(widths[Math.floor((widths.length - 1) / 2)] as number),
     srcset: widths.map((w) => `${address(w)} ${w}w`).join(', '),
     sizes: field.sizes ?? '100vw',
     width: top,
-    height: Math.round((top * shownHeight) / available),
+    height: renditionHeight(available, shownHeight, top),
   };
+  if (avif.length > 0) result.avifSrcset = avif.map((w) => `${address(w, 'avif')} ${w}w`).join(', ');
   if (full !== undefined) result.full = address(full);
   return result;
 }
@@ -77,10 +94,23 @@ export interface ImageMarkupOptions extends ImageSourcesOptions {
   dark?: ImageValue;
 }
 
-/** The attributes of an image's `<img>`, and the `<source>` for dark mode when there is one. */
+/** A `<source>` before the `<img>`: an AVIF list, or the dark-mode image. */
+export interface ImageSource {
+  /** The media query that selects it. Absent for the light image. */
+  media?: string;
+  /** The MIME type of the addresses, for AVIF. Absent when the browser must read the file to tell. */
+  type?: 'image/avif';
+  srcset: string;
+  sizes?: string;
+}
+
+/**
+ * The attributes of an image's `<img>` (WebP), and the `<source>` elements before it, in the order a
+ * browser must read them: the dark-mode images first, then the light AVIF, so a dark page never takes the light one.
+ */
 export interface ImageMarkup {
   img: { src: string; alt: string; srcset?: string; sizes?: string; width?: number; height?: number };
-  dark?: { media: string; srcset: string; sizes?: string };
+  sources: ImageSource[];
 }
 
 /**
@@ -93,11 +123,18 @@ export function imageMarkup(field: ImageField, value: ImageValue, options: Image
   const shown = imageSources(field, value, { prefix: options.prefix });
   const result: ImageMarkup = {
     img: 'srcset' in shown ? { src: shown.src, srcset: shown.srcset, sizes: shown.sizes, width: shown.width, height: shown.height, alt } : { src: shown.src, alt },
+    sources: [],
   };
   if (options.dark !== undefined) {
     const dark = imageSources(field, options.dark, { prefix: options.prefix });
-    result.dark = 'srcset' in dark ? { media: DARK_MEDIA, srcset: dark.srcset, sizes: dark.sizes } : { media: DARK_MEDIA, srcset: dark.src };
+    if ('srcset' in dark) {
+      if (dark.avifSrcset !== undefined) result.sources.push({ media: DARK_MEDIA, type: 'image/avif', srcset: dark.avifSrcset, sizes: dark.sizes });
+      result.sources.push({ media: DARK_MEDIA, srcset: dark.srcset, sizes: dark.sizes });
+    } else {
+      result.sources.push({ media: DARK_MEDIA, srcset: dark.src });
+    }
   }
+  if ('srcset' in shown && shown.avifSrcset !== undefined) result.sources.push({ type: 'image/avif', srcset: shown.avifSrcset, sizes: shown.sizes });
   return result;
 }
 

@@ -16,7 +16,7 @@ Licensed under the MIT licence (see `LICENSE`). The design is `standards/content
 
 ## Uploaded images
 
-An image field can hold an upload. The original is kept untouched in the site's R2 bucket, and the sizes a page needs are made from it by the site's Worker, only from `/admin` when staff save, with Cloudflare's `IMAGES` binding and its free allowance. The public route only reads files that exist, so a visitor can't spend the allowance. Sizes are WebP.
+An image field can hold an upload. The original is kept untouched in the site's R2 bucket, and the sizes a page needs are made from it by the site's Worker, only from `/admin` when staff save, with Cloudflare's `IMAGES` binding and its free allowance. The public route only reads files that exist, so a visitor can't spend the allowance. Sizes are WebP, and also AVIF where the size has at most 1 million pixels (the images service answers WebP above that, so a larger size has no AVIF file and no AVIF address on the page). `/media/` answers an AVIF address whose AVIF file is not there with the WebP of the same size (`image/webp`, cached for an hour), so sizes made before AVIF existed, and sizes the service can't make as AVIF, still show. The rebuild page counts a size missing until its AVIF is made, and a size the service can't make as AVIF gets a marker so it isn't asked for again.
 
 1. Bind the bucket and the images service in `wrangler.jsonc`:
 

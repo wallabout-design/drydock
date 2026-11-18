@@ -17,9 +17,11 @@ const markup = imageMarkup(field, value, { dark, prefix });
 const img = { ...markup.img, loading, class: className };
 ---
 {
-  markup.dark ? (
+  markup.sources.length > 0 ? (
     <picture>
-      <source media={markup.dark.media} srcset={markup.dark.srcset} sizes={markup.dark.sizes} />
+      {markup.sources.map((source) => (
+        <source media={source.media} type={source.type} srcset={source.srcset} sizes={source.sizes} />
+      ))}
       <img {...img} />
     </picture>
   ) : (

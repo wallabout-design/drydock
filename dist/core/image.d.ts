@@ -8,6 +8,8 @@ export interface UploadSources {
     /** The address for browsers that ignore `srcset`: the middle one. */
     src: string;
     srcset: string;
+    /** The AVIF addresses, for the sizes small enough to have one (see `avifFits`). Absent when there are none. */
+    avifSrcset?: string;
     /** The field's `sizes`, or `100vw`. */
     sizes: string;
     /** The shown shape, for the `<img>` attributes: the widest address, and the height that keeps the shape. */
@@ -18,6 +20,12 @@ export interface UploadSources {
 }
 /** The part of a rendition's address that names the crop: `whole`, or `c<x>-<y>-<w>-<h>`. */
 export declare function cropSegment(crop: ImageCrop | undefined): string;
+/** The formats a size is made in. WebP for every size; AVIF too, where `avifFits` says so. */
+export type RenditionFormat = 'webp' | 'avif';
+/** The height of a size of `width` pixels, for an image shown `shownWidth` by `shownHeight` (the crop, or the whole image). */
+export declare function renditionHeight(shownWidth: number, shownHeight: number, width: number): number;
+/** True when a size of this many pixels is also made as AVIF: small enough that the images service always answers AVIF for it. */
+export declare function avifFits(width: number, height: number): boolean;
 /**
  * The widths that may be made for an upload (ascending), and the lightbox width when there is one.
  * The page's addresses and the upload route's list of allowed widths both come from here.
@@ -44,7 +52,19 @@ export interface ImageMarkupOptions extends ImageSourcesOptions {
     /** A second image shown in dark mode. Its own alt text is not used: the light image's alt text describes both. */
     dark?: ImageValue;
 }
-/** The attributes of an image's `<img>`, and the `<source>` for dark mode when there is one. */
+/** A `<source>` before the `<img>`: an AVIF list, or the dark-mode image. */
+export interface ImageSource {
+    /** The media query that selects it. Absent for the light image. */
+    media?: string;
+    /** The MIME type of the addresses, for AVIF. Absent when the browser must read the file to tell. */
+    type?: 'image/avif';
+    srcset: string;
+    sizes?: string;
+}
+/**
+ * The attributes of an image's `<img>` (WebP), and the `<source>` elements before it, in the order a
+ * browser must read them: the dark-mode images first, then the light AVIF, so a dark page never takes the light one.
+ */
 export interface ImageMarkup {
     img: {
         src: string;
@@ -54,11 +74,7 @@ export interface ImageMarkup {
         width?: number;
         height?: number;
     };
-    dark?: {
-        media: string;
-        srcset: string;
-        sizes?: string;
-    };
+    sources: ImageSource[];
 }
 /**
  * The attributes for an image, as plain values: the framework helpers set them

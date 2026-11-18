@@ -134,15 +134,17 @@ const images = {
         Object.assign(call, o);
         return t;
       },
-      async output() {
-        if (allowance.exhausted || allowance.left === 0) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
-        if (allowance.left !== null) allowance.left -= 1;
+      async output(options) {
+        // The tests count whole sizes, so only the WebP of a size spends the "left: n" allowance; an AVIF is answered as AVIF.
+        const avif = options.format === 'image/avif';
+        if (allowance.exhausted || (allowance.left === 0 && !avif)) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
+        if (allowance.left !== null && !avif) allowance.left -= 1;
         if (failNext > 0) {
           failNext--;
           throw new Error('the images service is down');
         }
         calls.push(call);
-        return { response: () => new Response(TINY_WEBP, { headers: { 'content-type': 'image/webp' } }) };
+        return { response: () => new Response(TINY_WEBP, { headers: { 'content-type': options.format } }) };
       },
     };
     return t;
@@ -232,7 +234,7 @@ createServer(async (req, res) => {
     allowance.left = left;
     return send(200, {});
   }
-  if (url.pathname === '/__test/renditions') return send(200, [...objects.keys()].filter((k) => k.startsWith('renditions/')).sort());
+  if (url.pathname === '/__test/renditions') return send(200, [...objects.keys()].filter((k) => k.startsWith('renditions/') && k.endsWith('.webp')).sort());
   if (url.pathname === '/__test/other') {
     // Someone else edits a text behind the editor's back (always live, so the page is stale).
     const { key, text } = JSON.parse(body.toString());

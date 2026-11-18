@@ -61,7 +61,7 @@ function fakeBucket() {
 
 /** The images service, which can be told the month's allowance is used up. */
 function fakeImages() {
-  const state = { exhausted: false, made: 0 };
+  const state = { exhausted: false, made: 0, avif: false };
   const images: ImagesBinding = {
     async info() {
       return { format: 'image/jpeg', width: 4000, height: 3000 };
@@ -69,10 +69,11 @@ function fakeImages() {
     input() {
       const t = {
         transform: () => t,
-        async output() {
+        async output(options: { format: string }) {
           if (state.exhausted) throw Object.assign(new Error('ERROR 9422: limit'), { code: 9422 });
           state.made += 1;
-          return { response: () => new Response('webp', { headers: { 'content-type': 'image/webp' } }) };
+          const type = state.avif ? options.format : 'image/webp';
+          return { response: () => new Response('bytes', { headers: { 'content-type': type } }) };
         },
       };
       return t;
@@ -161,6 +162,33 @@ describe('which sizes are missing', () => {
     expect(found.missing[0]).toMatchObject({ key: KEY(1), list: 'rooms', field: 'photo', crop: null });
     expect((await makeAll(after, found.missing)).made).toBe(2);
     expect((await missing(after)).missing).toEqual([]);
+  });
+
+  it('counts a size without its AVIF as missing, and not once its AVIF or the no-AVIF marker is stored', async () => {
+    const s = setup([room('blue', 1)], { widths: [400, 800] });
+    s.i.state.avif = true;
+    await makeAll(s.editor, (await missing(s.editor)).missing);
+    expect((await missing(s.editor)).missing).toEqual([]);
+    const avif = (w: number) => `renditions/${KEY(1)}/whole/${w}.avif`;
+    expect(s.b.objects.has(avif(400))).toBe(true);
+    // A size made before AVIF existed.
+    s.b.objects.delete(avif(800));
+    const found = await missing(s.editor);
+    expect(found.missing.map((t) => t.width)).toEqual([800]);
+    // The service can't make it: the marker ends the asking.
+    s.i.state.avif = false;
+    expect((await makeAll(s.editor, found.missing)).made).toBe(1);
+    expect(s.b.objects.get(avif(800))).toMatchObject({ customMetadata: { avif: 'none' } });
+    expect((await missing(s.editor)).missing).toEqual([]);
+  });
+
+  it('asks for no AVIF above the pixel limit', async () => {
+    // 4000 x 3000 original: 1200 x 900 is over 1 million pixels, 800 x 600 is not.
+    const s = setup([room('blue', 1)], { widths: [800, 1200] });
+    s.i.state.avif = true;
+    await makeAll(s.editor, (await missing(s.editor)).missing);
+    expect([...s.b.objects.keys()].filter((k) => k.endsWith('.avif'))).toEqual([`renditions/${KEY(1)}/whole/800.avif`]);
+    expect((await missing(s.editor)).missing).toEqual([]);
   });
 
   it('asks for the lightbox size a field gains', async () => {

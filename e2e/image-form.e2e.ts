@@ -58,7 +58,7 @@ const banners = async (page: Page) => (await state(page)).map((r) => r.values.ba
 const made = async (page: Page, b: Banner) => {
   const upload: ImageUpload = { key: b.key, alt: '', width: b.width, height: b.height, crop: b.crop };
   const { widths, full } = renditionWidths(BANNER, upload);
-  const keys = (await bucket(page)).keys.filter((k) => k.startsWith(`renditions/${b.key}/`));
+  const keys = (await bucket(page)).keys.filter((k) => k.startsWith(`renditions/${b.key}/`) && k.endsWith('.webp'));
   return { keys, expected: [...widths, ...(full === undefined ? [] : [full])] };
 };
 const segment = (c: Crop) => `c${c.x}-${c.y}-${c.w}-${c.h}`;
@@ -226,7 +226,7 @@ test.describe('picking an image', () => {
     expect(value).not.toHaveProperty('crop');
     expect(value).not.toHaveProperty('src');
     // 480 and 960 are declared by default; the original is narrower than 960, so its own width is the last.
-    expect((await bucket(page)).keys.filter((k) => k.startsWith(`renditions/${value.key}/whole/`)).sort()).toEqual(
+    expect((await bucket(page)).keys.filter((k) => k.startsWith(`renditions/${value.key}/whole/`) && k.endsWith('.webp')).sort()).toEqual(
       [480, 500].map((w) => `renditions/${value.key}/whole/${w}.webp`),
     );
   });
