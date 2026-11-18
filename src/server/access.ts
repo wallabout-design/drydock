@@ -44,7 +44,7 @@ export interface IdentifyOptions {
 
 const keysByTeam = new Map<string, JWTVerifyGetKey>();
 
-const emails = (list: string | undefined): string[] =>
+export const emails = (list: string | undefined): string[] =>
   (list ?? '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
@@ -72,8 +72,24 @@ export async function identify(request: Request, env: AccessEnv, options: Identi
   }
   const admins = emails(env.ADMIN_EMAILS);
   const editors = emails(env.EDITOR_EMAILS);
+  if (admins.length === 0) return null;
+  const email = await accessEmail(request, env, options);
+  if (!email) return null;
+  if (admins.includes(email)) return { email, role: 'admin', test: false };
+  if (editors.includes(email)) return { email, role: 'editor', test: false };
+  return null;
+}
+
+/**
+ * The email in a valid Access token, lowercased, or null. Checks the signature, the team
+ * domain and the audience tag, and does not look at any list: the caller decides who may.
+ * With a setting missing there is no valid token.
+ */
+export async function accessEmail(request: Request, env: AccessEnv, options: IdentifyOptions = {}): Promise<string | null> {
+  const team = env.ACCESS_TEAM_DOMAIN?.trim();
+  const audience = env.ACCESS_AUD?.trim();
   const token = request.headers.get(ACCESS_HEADER);
-  if (!team || !audience || admins.length === 0 || !token) return null;
+  if (!team || !audience || !token) return null;
 
   const issuer = `https://${team}`;
   let getKey = options.keys ?? keysByTeam.get(issuer);
@@ -83,10 +99,7 @@ export async function identify(request: Request, env: AccessEnv, options: Identi
   }
   try {
     const { payload } = await jwtVerify(token, getKey, { issuer, audience, algorithms: ['RS256'], currentDate: options.now });
-    const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
-    if (admins.includes(email)) return { email, role: 'admin', test: false };
-    if (editors.includes(email)) return { email, role: 'editor', test: false };
-    return null;
+    return typeof payload.email === 'string' && payload.email ? payload.email.toLowerCase() : null;
   } catch {
     return null;
   }
