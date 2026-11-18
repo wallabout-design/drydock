@@ -36,6 +36,7 @@ const executablePath = process.env.CHROMIUM_PATH || undefined;
 export default defineConfig({
   testDir: 'e2e',
   testMatch: '**/*.e2e.ts',
+  globalSetup: './e2e/display-awake.ts',
   // The two servers hold state that every test resets, so tests run one at a time.
   workers: 1,
   forbidOnly: !!process.env.CI,
