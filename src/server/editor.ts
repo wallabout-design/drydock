@@ -9,6 +9,7 @@
 //   GET  /admin/lists/<name>                  the items of a list, with add, edit, remove and move
 //   GET  /admin/item-form.js, /admin/list-page.js  the list page's scripts (the form is its own module, which the edit view opens too)
 //   GET  /admin/images                        admins: rebuild the image sizes a changed field now needs (only when `uploads` is given)
+//   GET  /admin/api/me                        { email, role, waiting }: who is signed in (waiting is 0 for editors); the dock's staff hint
 //   GET  /admin/api/uploads/missing?list=&offset=  admins: the sizes a list's items need and lack
 //   GET  /admin/changes                       waiting, recent and undone changes, as plain HTML
 //   POST /admin/api/changes                   { ops: Operation[] } submits a change
@@ -25,7 +26,7 @@
 import type { JWTVerifyGetKey } from 'jose';
 import type { Operation } from '../core/change.js';
 import type { Content } from '../core/declare.js';
-import type { Change, Mode, Outcome, Refusal, Store } from '../core/store.js';
+import type { Change, ChangePage, Mode, Outcome, Refusal, Store } from '../core/store.js';
 import type { ItemValues, Problem } from '../core/types.js';
 import { can, identify, type AccessEnv, type Action, type Identity } from './access.js';
 import { orderItems } from '../core/read.js';
@@ -514,6 +515,21 @@ export function createEditor(options: EditorOptions): Editor {
     });
   }
 
+  /** Who is signed in, for the dock's staff hint. Only admins approve, so only they are told how many changes wait. */
+  async function me(request: Request, identity: Identity): Promise<Response> {
+    if (request.method !== 'GET') return wrongMethod('GET');
+    let waiting = 0;
+    if (can(identity, 'approve')) {
+      let cursor: string | undefined;
+      do {
+        const page: ChangePage = await store.list(cursor === undefined ? { state: 'waiting' } : { state: 'waiting', cursor });
+        waiting += page.changes.length;
+        cursor = page.next ?? undefined;
+      } while (cursor !== undefined);
+    }
+    return json(200, { email: identity.email, role: identity.role, waiting });
+  }
+
   function editorFile(request: Request, type: string, text: string): Response {
     if (request.method !== 'GET' && request.method !== 'HEAD') return wrongMethod('GET, HEAD');
     return new Response(request.method === 'HEAD' ? null : text, { status: 200, headers: { ...NO_STORE, 'content-type': type } });
@@ -540,6 +556,7 @@ export function createEditor(options: EditorOptions): Editor {
       if (pathname === '/admin/list-page.js') return editorFile(request, 'text/javascript; charset=utf-8', LIST_PAGE_JS);
       if (pathname === '/admin/editor.js') return editorFile(request, 'text/javascript; charset=utf-8', EDITOR_JS);
       if (pathname === '/admin/editor.css') return editorFile(request, 'text/css; charset=utf-8', EDITOR_CSS);
+      if (pathname === '/admin/api/me') return me(request, identity);
       if (pathname === '/admin/api/check') return can(identity, 'edit') ? check(request) : forbidden();
       if (uploads && pathname === '/admin/api/uploads') return can(identity, 'edit') ? upload(request) : forbidden();
       if (uploads && pathname === '/admin/api/uploads/renditions') return can(identity, 'edit') ? rendition(request) : forbidden();

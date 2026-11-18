@@ -5,6 +5,7 @@
 // The store is the in-memory one unless named: `d1` is the D1 store on SQLite, and `git`
 // the git store over an in-memory repository, whose pull requests never merge (so a save
 // stays waiting, as it does while the checks run).
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
@@ -205,6 +206,8 @@ createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === '/__test/state') return send(200, await store.read());
+  // The dock's staff helper, as built, for a page's script to import (the browser test for the staff hint).
+  if (url.pathname === '/__test/dock.js') return send(200, readFileSync(new URL('../dist/dock/staff.js', import.meta.url), 'utf8'), 'text/javascript; charset=utf-8');
   if (url.pathname === '/__test/bucket') {
     return send(200, { keys: [...objects.keys()], calls, originals: [...objects].filter(([k]) => k.startsWith('originals/')).map(([k, o]) => ({ key: k, size: o.value.length, ...o.customMetadata })) });
   }

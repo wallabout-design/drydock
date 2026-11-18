@@ -45,6 +45,10 @@
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
     },
+    "./dock": {
+      "types": "./dist/dock/staff.d.ts",
+      "default": "./dist/dock/staff.js"
+    },
     "./feedback": {
       "types": "./dist/feedback/index.d.ts",
       "default": "./dist/feedback/index.js"
