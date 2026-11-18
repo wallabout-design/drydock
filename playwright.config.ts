@@ -4,11 +4,13 @@ import { defineConfig, devices } from '@playwright/test';
 // The editor in real browsers, against a small fixture site (e2e/server.mjs)
 // that runs the built package (dist/) over the in-memory store. Run `npm run
 // build` first; `npm run verify` does. One server per mode: changes go live on
-// their own (auto), or wait for an admin (review).
+// their own (auto), or wait for an admin (review). A third, static server
+// (e2e/feedback-server.mjs) serves the feedback link's fixture pages.
 
-// Two servers need two free ports in a row: the auto server on the base port,
-// the review server on the next one. Without E2E_PORT_BASE, pick a free pair
-// now, once, and set it, so the workers this run starts inherit the same one.
+// Three servers need three free ports in a row: the auto server on the base
+// port, the review server on the next one, the feedback server on the one
+// after. Without E2E_PORT_BASE, pick a free run now, once, and set it, so the
+// workers this run starts inherit the same one.
 // Two runs at once (in two worktrees) then never share a port.
 const FREE_PAIR_PROBE = `
 const net = require('node:net');
@@ -20,7 +22,7 @@ const free = (port) => new Promise((resolve) => {
 (async () => {
   for (;;) {
     const port = 49152 + Math.floor(Math.random() * 15000);
-    if ((await free(port)) && (await free(port + 1))) return console.log(port);
+    if ((await free(port)) && (await free(port + 1)) && (await free(port + 2))) return console.log(port);
   }
 })();
 `;
@@ -28,6 +30,7 @@ process.env.E2E_PORT_BASE ??= execFileSync(process.execPath, ['-e', FREE_PAIR_PR
 
 const AUTO = Number(process.env.E2E_PORT_BASE);
 const REVIEW = AUTO + 1;
+const FEEDBACK = AUTO + 2;
 
 // CHROMIUM_PATH points Chromium at a browser already installed on the machine,
 // for where `playwright install` can't download one.
@@ -50,5 +53,6 @@ export default defineConfig({
   webServer: [
     { command: `node e2e/server.mjs ${AUTO} auto`, url: `http://127.0.0.1:${AUTO}/__test/state`, reuseExistingServer: false },
     { command: `node e2e/server.mjs ${REVIEW} review`, url: `http://127.0.0.1:${REVIEW}/__test/state`, reuseExistingServer: false },
+    { command: `node e2e/feedback-server.mjs ${FEEDBACK}`, url: `http://127.0.0.1:${FEEDBACK}/e2e/feedback-fixture/index.html`, reuseExistingServer: false },
   ],
 });

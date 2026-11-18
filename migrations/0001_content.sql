@@ -1,4 +1,4 @@
--- @wallabout-design/editor: the D1 store's tables. Sites copy this file into
+-- @wallabout-design/drydock: the D1 store's tables. Sites copy this file into
 -- their own migrations folder (with the next number) and apply it like any
 -- other. It is the same on every site: a new list or field needs no migration.
 

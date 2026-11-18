@@ -1,11 +1,12 @@
 # Agent guidelines
 
-`@wallabout-design/editor` is the package that lets client staff edit texts and lists on their own wallabout site. The design is `standards/content-editing.md` in `wallabout-design/standards`; read it first.
+`@wallabout-design/drydock` is the package wallabout sites use on their own pages: client staff edit texts and lists (`src/core`, `src/server`, `src/editor`, `src/stores`; design `standards/content-editing.md`), and reviewers send feedback (`src/feedback`; design `standards/feedback.md`). The plan for both is `standards/drydock.md` in `wallabout-design/standards`; read it first. It was `wallabout-design/editor`, and `wallabout-design/feedback` was merged in with its history.
 
 ## Rules
 
 - The core has no framework or Worker imports. It takes what it depends on (storage, clock, `fetch`) as arguments.
-- Sites install by tag: `github:wallabout-design/editor#vX.Y.Z`. Merging to `main` changes no site.
+- Sites install by tag: `github:wallabout-design/drydock#vX.Y.Z`. Merging to `main` changes no site.
+- `src/feedback` imports nothing from the rest of the package, so a page that only shows the feedback link bundles no editing code. Keep it that way.
 - `dist/` is committed, because sites install it straight from git. Rebuild it with `npm run build` and commit it with the change.
 
 ## Checking a change

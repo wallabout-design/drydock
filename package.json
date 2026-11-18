@@ -1,9 +1,9 @@
 {
-  "name": "@wallabout-design/editor",
-  "version": "0.3.0",
-  "description": "Client-side editing for wallabout sites: staff edit texts and lists on their own site",
+  "name": "@wallabout-design/drydock",
+  "version": "0.4.0",
+  "description": "Drydock for wallabout sites: staff edit texts and lists on their own site, and reviewers send feedback from any page",
   "license": "MIT",
-  "repository": "github:wallabout-design/editor",
+  "repository": "github:wallabout-design/drydock",
   "type": "module",
   "sideEffects": false,
   "files": [
@@ -32,10 +32,19 @@
     "./astro/Image.astro": "./dist/astro/Image.astro",
     "./editor.js": "./dist/editor.js",
     "./editor.css": "./dist/editor.css",
-    "./item-form.js": "./dist/item-form.js"
+    "./item-form.js": "./dist/item-form.js",
+    "./feedback": {
+      "types": "./dist/feedback/index.d.ts",
+      "default": "./dist/feedback/index.js"
+    },
+    "./feedback/react": {
+      "types": "./dist/feedback/react.d.ts",
+      "default": "./dist/feedback/react.js"
+    },
+    "./feedback/reserve.css": "./dist/feedback/reserve.css"
   },
   "scripts": {
-    "build": "node scripts/build-assets.mjs && rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/ && cp src/editor/*.js src/editor/editor.css dist/",
+    "build": "node scripts/build-assets.mjs && rm -rf dist && tsc -p tsconfig.json && cp src/astro/*.astro dist/astro/ && cp src/editor/*.js src/editor/editor.css dist/ && cp src/feedback/reserve.css dist/feedback/",
     "check": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
