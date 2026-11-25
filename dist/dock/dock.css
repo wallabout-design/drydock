@@ -55,3 +55,51 @@
 body:has([data-dock-launcher]) {
   padding-bottom: var(--dock-reserve, var(--feedback-reserve, 64px));
 }
+/* The feedback form (a submit transport): the quoted text, the note box, the counter, Send and the fallback. */
+.dock-quote {
+  margin: 0 0 8px;
+  font-size: 0.875em;
+}
+.dock-quote q {
+  font-style: italic;
+}
+.dock-note {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 4px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--dock-border, currentColor);
+  border-radius: 0;
+  padding: 6px;
+  resize: vertical;
+}
+.dock-count,
+.dock-status {
+  margin: 4px 0;
+  font-size: 0.875em;
+}
+.dock-button {
+  font: inherit;
+  color: inherit;
+  background: var(--dock-bg, #fff);
+  border: 1px solid var(--dock-border, currentColor);
+  border-radius: 0;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.dock-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.dock-button:focus-visible,
+.dock-note:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.dock-fallback {
+  margin-top: 4px;
+  font-size: 0.875em;
+}

@@ -26,6 +26,8 @@ export interface FeedbackContext {
   selection?: string;
   /** Short random code that keeps each note apart in the inbox, such as `k7mq`. */
   id?: string;
+  /** The note the reviewer typed, when the mail is a fallback for a note that could not be sent. */
+  note?: string;
 }
 
 /** No 0/o, 1/l/i: the code should survive being read aloud or retyped. */
@@ -43,12 +45,11 @@ export const roundDpr = (dpr: number): number => Math.round(dpr * 100) / 100;
 export function feedbackMailto(c: FeedbackContext, { siteId, address = FEEDBACK_ADDRESS }: FeedbackOptions): string {
   const subject = `[${siteId}] ${c.path}${c.id ? ` #${c.id}` : ''}`;
   const quote = c.selection?.trim().slice(0, MAX_SELECTION);
+  const typed = c.note?.trim();
   const body = [
     ...(quote ? ['about this text:', ...quote.split(/\r?\n/).map((l) => `> ${l}`), ''] : []),
     'what to change (a screenshot helps):',
-    '',
-    '',
-    '',
+    ...(typed ? [...typed.split(/\r?\n/), ''] : ['', '', '']),
     '--- page details, please leave ---',
     `url: ${c.url}`,
     `viewport: ${c.viewport} @${roundDpr(c.dpr)}x`,
