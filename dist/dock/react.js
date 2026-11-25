@@ -5,8 +5,8 @@ import { useEffect, useRef } from 'react';
 import { initDock } from './dock.js';
 import { editingSection } from './editing-section.js';
 import { feedbackSection } from './feedback-section.js';
-export function Dock({ siteId, address, sections, className }) {
+export function Dock({ siteId, address, submit, sections, className }) {
     const ref = useRef(null);
-    useEffect(() => (ref.current ? initDock(ref.current, { siteId, sections: [feedbackSection({ siteId, address }), editingSection(), ...(sections ?? [])] }) : undefined), [siteId, address, sections]);
+    useEffect(() => (ref.current ? initDock(ref.current, { siteId, sections: [feedbackSection({ siteId, address, submit }), editingSection(), ...(sections ?? [])] }) : undefined), [siteId, address, submit, sections]);
     return _jsx("div", { ref: ref, className: className, "data-dock-root": "" });
 }

@@ -19,6 +19,8 @@ export interface FeedbackContext {
     selection?: string;
     /** Short random code that keeps each note apart in the inbox, such as `k7mq`. */
     id?: string;
+    /** The note the reviewer typed, when the mail is a fallback for a note that could not be sent. */
+    note?: string;
 }
 /** A fresh 4-character code for the subject line (31^4, about 920,000 values). */
 export declare function feedbackId(): string;

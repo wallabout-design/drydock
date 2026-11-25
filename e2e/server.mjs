@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
-import { ACCESS_HEADER, createEditor, d1Store, fakeRepo, gitStore, renderContentFiles, serveMedia } from '../dist/server/index.js';
+import { ACCESS_HEADER, createEditor, createFeedback, d1Store, fakeRepo, gitStore, renderContentFiles, serveMedia } from '../dist/server/index.js';
 import { fixtureD1 } from './d1-fixture.mjs';
 
 const port = Number(process.argv[2]);
@@ -159,6 +159,9 @@ const images = {
 
 let store;
 let editor;
+/** The feedback routes of this server, and the notes their sink has been handed (reset with the store). */
+let feedback;
+let sunk = [];
 /** The store of this server's kind, holding `initial`. */
 function makeStore(initial, content) {
   if (kind === 'd1') return d1Store(fixtureD1(structuredClone(initial)), { content });
@@ -173,6 +176,18 @@ function reset(photo = {}, initial = START(), keepBucket = false) {
   allowance.left = null;
   const content = declare(photo);
   store = makeStore(initial, content);
+  sunk = [];
+  feedback = createFeedback({
+    siteId: 'test',
+    senders: ['ed@example.com'],
+    keys,
+    sink: {
+      async send(note, sender) {
+        sunk.push({ subject: note.subject, note: note.note, sender: sender.email });
+        return { ok: true, ref: `note-${sunk.length}` };
+      },
+    },
+  });
   editor = createEditor({
     uploads: { bucket, images },
     content,
@@ -206,6 +221,14 @@ createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === '/__test/state') return send(200, await store.read());
+  if (url.pathname === '/__test/notes') return send(200, sunk);
+  // The dock's feedback form on a page of its own, posting to the feedback routes below (the browser test for submitTransport).
+  if (url.pathname === '/__test/dock-feedback.html') {
+    return send(200, '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>dock</title><link rel="stylesheet" href="/dist/dock/dock.css"><script type="module" src="/__test/dock-feedback.js"></script></head><body><main><h1>a page</h1><p>Some text to highlight.</p></main><div id="dock"></div></body></html>', 'text/html');
+  }
+  if (url.pathname === '/__test/dock-feedback.js') {
+    return send(200, "import { initDock, feedbackSection } from '/dist/dock/index.js';\nimport { submitTransport } from '/dist/feedback/index.js';\nwindow.dockCleanup = initDock(document.getElementById('dock'), { siteId: 'test', sections: [feedbackSection({ siteId: 'test', submit: submitTransport() })] });\n", 'text/javascript; charset=utf-8');
+  }
   // The dock's editing section on a page of its own, from the built package (the browser test for the section).
   if (url.pathname === '/__test/dock-editing.html') {
     return send(200, '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>dock</title><link rel="stylesheet" href="/dist/dock/dock.css"><script type="module" src="/__test/dock-editing.js"></script></head><body><main><h1>a page</h1></main><div id="dock"></div></body></html>', 'text/html');
@@ -296,6 +319,11 @@ createServer(async (req, res) => {
   if (who) headers.set(ACCESS_HEADER, await token(decodeURIComponent(who)));
   const init = { method: req.method, headers };
   if (req.method !== 'GET' && req.method !== 'HEAD') init.body = body;
+  if (url.pathname.startsWith('/feedback/api/')) {
+    const made = await feedback.handle(new Request(url, init), env);
+    res.writeHead(made.status, Object.fromEntries(made.headers));
+    return res.end(Buffer.from(await made.arrayBuffer()));
+  }
   const response = await editor.handle(new Request(url, init), env);
   if (!response) return send(404, 'not found', 'text/plain');
   res.writeHead(response.status, Object.fromEntries(response.headers));
