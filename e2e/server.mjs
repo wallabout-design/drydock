@@ -206,6 +206,24 @@ createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === '/__test/state') return send(200, await store.read());
+  // The dock's editing section on a page of its own, from the built package (the browser test for the section).
+  if (url.pathname === '/__test/dock-editing.html') {
+    return send(200, '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>dock</title><link rel="stylesheet" href="/dist/dock/dock.css"><script type="module" src="/__test/dock-editing.js"></script></head><body><main><h1>a page</h1></main><div id="dock"></div></body></html>', 'text/html');
+  }
+  if (url.pathname === '/__test/dock-editing.js') {
+    return send(200, "import { initDock, editingSection } from '/dist/dock/index.js';\nwindow.dockCleanup = initDock(document.getElementById('dock'), { siteId: 'test', sections: [editingSection()] });\n", 'text/javascript; charset=utf-8');
+  }
+  // The built package's files, for the test page's imports.
+  if (url.pathname.startsWith('/dist/')) {
+    const file = new URL(`../dist/${url.pathname.slice('/dist/'.length)}`, import.meta.url);
+    if (!file.pathname.startsWith(new URL('../dist/', import.meta.url).pathname)) return send(404, 'not found', 'text/plain');
+    try {
+      const type = file.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8';
+      return send(200, readFileSync(file, 'utf8'), type);
+    } catch {
+      return send(404, 'not found', 'text/plain');
+    }
+  }
   // The dock's staff helper, as built, for a page's script to import (the browser test for the staff hint).
   if (url.pathname === '/__test/dock.js') return send(200, readFileSync(new URL('../dist/dock/staff.js', import.meta.url), 'utf8'), 'text/javascript; charset=utf-8');
   if (url.pathname === '/__test/bucket') {

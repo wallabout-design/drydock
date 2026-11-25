@@ -3,9 +3,10 @@ import { jsx as _jsx } from "react/jsx-runtime";
 // mount, from the bundle, so it needs no inline script under a CSP.
 import { useEffect, useRef } from 'react';
 import { initDock } from './dock.js';
+import { editingSection } from './editing-section.js';
 import { feedbackSection } from './feedback-section.js';
 export function Dock({ siteId, address, sections, className }) {
     const ref = useRef(null);
-    useEffect(() => (ref.current ? initDock(ref.current, { siteId, sections: [feedbackSection({ siteId, address }), ...(sections ?? [])] }) : undefined), [siteId, address, sections]);
+    useEffect(() => (ref.current ? initDock(ref.current, { siteId, sections: [feedbackSection({ siteId, address }), editingSection(), ...(sections ?? [])] }) : undefined), [siteId, address, sections]);
     return _jsx("div", { ref: ref, className: className, "data-dock-root": "" });
 }
