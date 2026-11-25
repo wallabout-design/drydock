@@ -6,6 +6,10 @@
 - **Dock** (`./dock`, `./dock/react`, `./dock.css`): one launcher and panel at the bottom right, with a section for each feature. It ships with the feedback section on the `mailto:` transport, shown after `?feedback`; nothing runs at import, and ordinary visitors see and request nothing. Theme it with CSS variables (`--dock-bg`, `--dock-fg`, `--dock-border`, `--dock-font`, `--dock-offset`, `--dock-z`); `--dock-reserve` pads the page bottom while the launcher shows (`--feedback-reserve` is the fallback until 1.0). The design is `standards/drydock.md`, "the dock".
 - **Feedback** (`./feedback`, `./feedback/react`, `./feedback/reserve.css`): a hidden "send feedback" link for reviewers who opt in with `?feedback`. See [`docs/feedback.md`](docs/feedback.md); the design is `standards/feedback.md`.
 
+## Architecture
+
+The pieces, and how an edit, a feedback note and the dock's staff hint move through them, are in [`docs/architecture.md`](docs/architecture.md).
+
 The plan for both (one panel, pluggable stores and feedback delivery) is `standards/drydock.md`.
 
 drydock was `wallabout-design/editor` up to v0.3.0; `wallabout-design/feedback` (up to its v0.3.0) was merged in with its history. Sites install it by tag:
