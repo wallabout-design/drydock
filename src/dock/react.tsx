@@ -2,13 +2,14 @@
 // mount, from the bundle, so it needs no inline script under a CSP.
 import { useEffect, useRef } from 'react';
 import { initDock, type DockSection } from './dock.js';
+import { editingSection } from './editing-section.js';
 import { feedbackSection } from './feedback-section.js';
 
 export interface DockProps {
   siteId: string;
   /** Feedback's email address, when it is not the default. */
   address?: string;
-  /** Sections besides feedback, which the dock always has. */
+  /** Sections after feedback and editing, which the dock always has. */
   sections?: DockSection[];
   className?: string;
 }
@@ -16,7 +17,7 @@ export interface DockProps {
 export function Dock({ siteId, address, sections, className }: DockProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(
-    () => (ref.current ? initDock(ref.current, { siteId, sections: [feedbackSection({ siteId, address }), ...(sections ?? [])] }) : undefined),
+    () => (ref.current ? initDock(ref.current, { siteId, sections: [feedbackSection({ siteId, address }), editingSection(), ...(sections ?? [])] }) : undefined),
     [siteId, address, sections],
   );
   return <div ref={ref} className={className} data-dock-root="" />;
