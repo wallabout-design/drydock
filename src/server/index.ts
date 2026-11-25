@@ -36,3 +36,4 @@ export {
   type Sink,
   type SinkResult,
 } from './feedback.js';
+export { githubIssuesSink, issueBody, explainFailure, type GitHubAuth, type GitHubIssuesOptions, type IssueNote, type IssueSinkResult } from '../feedback/sinks/github.js';
