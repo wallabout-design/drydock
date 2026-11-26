@@ -73,3 +73,27 @@ test('a note over 5,000 characters is refused before it is sent', async ({ page 
   expect(posted).toBe(0);
   expect(await sunkNotes(page)).toEqual([]);
 });
+
+test('the feedback routine looks up the sender of a sent note with a service token, and a browser session cannot', async ({ page, playwright }) => {
+  await signInAs(page, 'ed@example.com');
+  await page.goto(`${AUTO}${pagePath}`);
+  await launcher(page).click();
+  await note(page).fill('The bridge is loose.');
+  await send(page).click();
+  await expect(status(page)).toHaveText('Sent. Reference: note-1');
+
+  const lookup = async (cookie: string, ref = 'note-1') => {
+    const context = await playwright.request.newContext({ extraHTTPHeaders: { cookie } });
+    try {
+      const res = await context.get(`${AUTO}/feedback/api/sender?ref=${ref}`);
+      return { status: res.status(), body: await res.text() };
+    } finally {
+      await context.dispose();
+    }
+  };
+  expect(await lookup('service-token=routine-id.access')).toEqual({ status: 200, body: '{"email":"ed@example.com"}' });
+  expect((await lookup('service-token=routine-id.access', 'note-9')).status).toBe(404);
+  expect(await lookup('service-token=someone-else')).toEqual({ status: 403, body: '' });
+  expect(await lookup('test-user=ed@example.com')).toEqual({ status: 403, body: '' });
+  expect(await lookup('test-user=boss@example.com')).toEqual({ status: 403, body: '' });
+});

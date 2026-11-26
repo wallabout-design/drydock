@@ -1,14 +1,14 @@
 // A D1 look-alike on Node's SQLite, for the fixture server (e2e/server.mjs), loaded with the
-// package's real migration. The same as test/d1-sqlite.ts, in plain JavaScript so the server
+// package's real migrations (content and feedback senders). The same as test/d1-sqlite.ts, in plain JavaScript so the server
 // can run it without a build step. `batch` is one transaction, as D1's is.
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-const MIGRATION = new URL('../migrations/0001_content.sql', import.meta.url);
+const MIGRATIONS = ['0001_content.sql', '0002_feedback_senders.sql'].map((name) => new URL(`../migrations/${name}`, import.meta.url));
 
 export function fixtureD1(initial = {}) {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(readFileSync(MIGRATION, 'utf8'));
+  for (const migration of MIGRATIONS) sqlite.exec(readFileSync(migration, 'utf8'));
   const at = '2026-01-01T00:00:00.000Z';
   for (const [key, text] of Object.entries(initial.texts ?? {})) {
     sqlite.prepare('INSERT INTO content_texts (key, text, updated_at) VALUES (?, ?, ?)').run(key, text, at);

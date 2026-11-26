@@ -49,12 +49,8 @@ export async function identify(request, env, options = {}) {
         return { email, role: 'editor', test: false };
     return null;
 }
-/**
- * The email in a valid Access token, lowercased, or null. Checks the signature, the team
- * domain and the audience tag, and does not look at any list: the caller decides who may.
- * With a setting missing there is no valid token.
- */
-export async function accessEmail(request, env, options = {}) {
+/** The claims of a valid Access token, or null. Checks the signature, the team domain and the audience tag. */
+async function verifiedClaims(request, env, options) {
     const team = env.ACCESS_TEAM_DOMAIN?.trim();
     const audience = env.ACCESS_AUD?.trim();
     const token = request.headers.get(ACCESS_HEADER);
@@ -68,11 +64,32 @@ export async function accessEmail(request, env, options = {}) {
     }
     try {
         const { payload } = await jwtVerify(token, getKey, { issuer, audience, algorithms: ['RS256'], currentDate: options.now });
-        return typeof payload.email === 'string' && payload.email ? payload.email.toLowerCase() : null;
+        return payload;
     }
     catch {
         return null;
     }
+}
+/**
+ * The email in a valid Access token, lowercased, or null. Checks the signature, the team
+ * domain and the audience tag, and does not look at any list: the caller decides who may.
+ * With a setting missing there is no valid token.
+ */
+export async function accessEmail(request, env, options = {}) {
+    const payload = await verifiedClaims(request, env, options);
+    return payload && typeof payload.email === 'string' && payload.email ? payload.email.toLowerCase() : null;
+}
+/**
+ * The client id of the Access service token behind a valid Access token, or null. A service
+ * token's JWT has no `email` and carries `common_name`, the token's client id. A token with an
+ * `email` claim is a person's browser sign-in and is never a service token, whatever else it holds.
+ * Same checks as `accessEmail`; the caller decides which client ids may.
+ */
+export async function accessServiceToken(request, env, options = {}) {
+    const payload = await verifiedClaims(request, env, options);
+    if (!payload || 'email' in payload)
+        return null;
+    return typeof payload.common_name === 'string' && payload.common_name.trim() ? payload.common_name.trim() : null;
 }
 /** Whether this person may do this. An admin may do everything an editor may. */
 export function can(identity, action) {

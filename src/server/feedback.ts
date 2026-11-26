@@ -3,6 +3,10 @@
 // `handle(request, env)`; it answers the paths it owns and returns null for the rest.
 //
 //   POST /feedback/api/notes   { note, context } hands one note to the site's sink
+//   GET  /feedback/api/sender?ref=<ref>   the address of the note's sender, for the routine
+//
+// The sender lookup exists only with a `senderStore`. It answers only an Access service
+// token whose client id is in `routineClientIds`, never a person's browser sign-in.
 //
 // Who may send: a signed-in Cloudflare Access user (emailed PIN) whose email is in the
 // site's `feedback_senders`. The token is checked here, as access.ts does for editors.
@@ -10,11 +14,13 @@
 // refused, and a refusal says nothing: a 403 with an empty body.
 import type { JWTVerifyGetKey } from 'jose';
 import { cleanLine, cleanLines, lengthOf } from '../core/clean.js';
-import { accessEmail, emails, type AccessEnv } from './access.js';
+import { accessEmail, accessServiceToken, emails, type AccessEnv } from './access.js';
+import type { SenderStore } from './sender-store.js';
 
 export const MAX_NOTE_BODY_BYTES = 16 * 1024;
 export const MAX_NOTE_CHARACTERS = 5000;
 export const MAX_NOTES_PER_HOUR = 20;
+export const MAX_REF_LENGTH = 500;
 const HOUR_MS = 60 * 60 * 1000;
 
 /** What the sink is told about the page. Every field is plain text and cut to a fixed length. */
@@ -68,6 +74,10 @@ export interface FeedbackOptions {
   /** The site's own origin, when the Worker can't tell it from the request address. */
   origin?: string;
   limiter?: NoteLimiter;
+  /** Keeps each delivered note's sender, for the lookup below. Without one, nothing is kept and the lookup answers 404 to everyone. */
+  senderStore?: SenderStore;
+  /** The Access service tokens' client ids that may look a sender up (the routine's), as a list or separated by commas. With none, the lookup refuses everyone. */
+  routineClientIds?: readonly string[] | string;
   /** For tests: the keys an Access token is checked against, and the time it is checked at. */
   keys?: JWTVerifyGetKey;
   now?: () => Date;
@@ -127,6 +137,10 @@ function readContext(raw: unknown): NoteContext {
 export function createFeedback(options: FeedbackOptions): Feedback {
   const { siteId, sink } = options;
   const senders = typeof options.senders === 'string' ? emails(options.senders) : options.senders.map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const { senderStore } = options;
+  const routineIds = new Set(
+    (typeof options.routineClientIds === 'string' ? options.routineClientIds.split(',') : (options.routineClientIds ?? [])).map((id) => id.trim()).filter(Boolean),
+  );
   const limiter = options.limiter ?? memoryLimiter();
   const now = options.now ?? (() => new Date());
 
@@ -180,7 +194,33 @@ export function createFeedback(options: FeedbackOptions): Feedback {
       result = { ok: false, message: 'The note could not be delivered.' };
     }
     if (!result.ok) return json(502, { error: 'not-delivered', message: result.message });
+    if (senderStore) {
+      // The note is already delivered: a store failure must not make the reviewer send it twice.
+      // Nothing is logged, because the error could carry the address.
+      try {
+        await senderStore.put({ ref: result.ref, email, site: siteId });
+      } catch {
+        /* the routine will find no sender for this note */
+      }
+    }
     return json(200, { ok: true, ref: result.ref });
+  }
+
+  async function getSender(request: Request, env: AccessEnv): Promise<Response> {
+    // Who first, as for a note. A browser identity has an email and is refused here whatever its role.
+    if (!senderStore || routineIds.size === 0) return forbidden();
+    const client = await accessServiceToken(request, env, { keys: options.keys, now: options.now?.() });
+    if (!client || !routineIds.has(client)) return forbidden();
+    if (request.method !== 'GET') return new Response(null, { status: 405, headers: { ...NO_STORE, allow: 'GET' } });
+    const ref = new URL(request.url).searchParams.get('ref') ?? '';
+    if (ref === '' || ref.length > MAX_REF_LENGTH) return new Response(null, { status: 404, headers: NO_STORE });
+    let found: { email: string } | null;
+    try {
+      found = await senderStore.find(ref);
+    } catch {
+      return json(500, { error: 'lookup-failed' });
+    }
+    return found ? json(200, { email: found.email }) : new Response(null, { status: 404, headers: NO_STORE });
   }
 
   return {
@@ -188,6 +228,7 @@ export function createFeedback(options: FeedbackOptions): Feedback {
       const { pathname } = new URL(request.url);
       if (!isFeedbackPath(pathname)) return null;
       if (pathname === '/feedback/api/notes') return postNote(request, env);
+      if (pathname === '/feedback/api/sender') return getSender(request, env);
       return new Response(null, { status: 404, headers: NO_STORE });
     },
   };

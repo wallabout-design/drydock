@@ -9,7 +9,7 @@
 // Previews are not behind Access. There, and only there, PREVIEW_TEST_LOGIN
 // names a fixed test editor. It works only on a preview or local host, and
 // never when the Access settings are present, so it can't apply in production.
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 
 export interface AccessEnv {
   /** e.g. "wallabout-design.cloudflareaccess.com" */
@@ -80,12 +80,8 @@ export async function identify(request: Request, env: AccessEnv, options: Identi
   return null;
 }
 
-/**
- * The email in a valid Access token, lowercased, or null. Checks the signature, the team
- * domain and the audience tag, and does not look at any list: the caller decides who may.
- * With a setting missing there is no valid token.
- */
-export async function accessEmail(request: Request, env: AccessEnv, options: IdentifyOptions = {}): Promise<string | null> {
+/** The claims of a valid Access token, or null. Checks the signature, the team domain and the audience tag. */
+async function verifiedClaims(request: Request, env: AccessEnv, options: IdentifyOptions): Promise<JWTPayload | null> {
   const team = env.ACCESS_TEAM_DOMAIN?.trim();
   const audience = env.ACCESS_AUD?.trim();
   const token = request.headers.get(ACCESS_HEADER);
@@ -99,10 +95,32 @@ export async function accessEmail(request: Request, env: AccessEnv, options: Ide
   }
   try {
     const { payload } = await jwtVerify(token, getKey, { issuer, audience, algorithms: ['RS256'], currentDate: options.now });
-    return typeof payload.email === 'string' && payload.email ? payload.email.toLowerCase() : null;
+    return payload;
   } catch {
     return null;
   }
+}
+
+/**
+ * The email in a valid Access token, lowercased, or null. Checks the signature, the team
+ * domain and the audience tag, and does not look at any list: the caller decides who may.
+ * With a setting missing there is no valid token.
+ */
+export async function accessEmail(request: Request, env: AccessEnv, options: IdentifyOptions = {}): Promise<string | null> {
+  const payload = await verifiedClaims(request, env, options);
+  return payload && typeof payload.email === 'string' && payload.email ? payload.email.toLowerCase() : null;
+}
+
+/**
+ * The client id of the Access service token behind a valid Access token, or null. A service
+ * token's JWT has no `email` and carries `common_name`, the token's client id. A token with an
+ * `email` claim is a person's browser sign-in and is never a service token, whatever else it holds.
+ * Same checks as `accessEmail`; the caller decides which client ids may.
+ */
+export async function accessServiceToken(request: Request, env: AccessEnv, options: IdentifyOptions = {}): Promise<string | null> {
+  const payload = await verifiedClaims(request, env, options);
+  if (!payload || 'email' in payload) return null;
+  return typeof payload.common_name === 'string' && payload.common_name.trim() ? payload.common_name.trim() : null;
 }
 
 /** Whether this person may do this. An admin may do everything an editor may. */
