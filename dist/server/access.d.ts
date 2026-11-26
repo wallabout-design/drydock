@@ -2,7 +2,7 @@ import { type JWTVerifyGetKey } from 'jose';
 export interface AccessEnv {
     /** e.g. "wallabout-design.cloudflareaccess.com" */
     ACCESS_TEAM_DOMAIN?: string;
-    /** The Access application's audience tag. */
+    /** The Access application's audience tag. A site with several Access applications (admin, feedback notes, the routine's sender lookup) lists their tags, comma-separated; a token for any of them passes the audience check. */
     ACCESS_AUD?: string;
     /** Who may edit: emails, separated by commas. May be empty when only admins edit. */
     EDITOR_EMAILS?: string;

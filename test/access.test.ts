@@ -56,6 +56,12 @@ describe('identify with an Access token', () => {
   });
 
   it('refuses the wrong audience', async () => expect(await who(await token({ aud: 'other-app' }))).toBeNull());
+  it('accepts a token for any tag in a comma-separated list, and still refuses others', async () => {
+    const several = { ...env, ACCESS_AUD: `first-app, ${AUD} ,third-app` };
+    expect((await who(await token({}), several))?.role).toBe('editor');
+    expect(await who(await token({ aud: 'other-app' }), several)).toBeNull();
+    expect(await who(await token({}), { ...env, ACCESS_AUD: ' , ' })).toBeNull();
+  });
   it('refuses the wrong issuer', async () => expect(await who(await token({ iss: 'https://evil.cloudflareaccess.com' }))).toBeNull());
   it('refuses an expired token', async () => expect(await who(await token({ exp: at(-10) }))).toBeNull());
   it('accepts the same token just before it expires', async () => expect(await who(await token({ exp: at(1) }))).not.toBeNull());
