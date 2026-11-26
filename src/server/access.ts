@@ -14,7 +14,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } 
 export interface AccessEnv {
   /** e.g. "wallabout-design.cloudflareaccess.com" */
   ACCESS_TEAM_DOMAIN?: string;
-  /** The Access application's audience tag. */
+  /** The Access application's audience tag. A site with several Access applications (admin, feedback notes, the routine's sender lookup) lists their tags, comma-separated; a token for any of them passes the audience check. */
   ACCESS_AUD?: string;
   /** Who may edit: emails, separated by commas. May be empty when only admins edit. */
   EDITOR_EMAILS?: string;
@@ -83,9 +83,9 @@ export async function identify(request: Request, env: AccessEnv, options: Identi
 /** The claims of a valid Access token, or null. Checks the signature, the team domain and the audience tag. */
 async function verifiedClaims(request: Request, env: AccessEnv, options: IdentifyOptions): Promise<JWTPayload | null> {
   const team = env.ACCESS_TEAM_DOMAIN?.trim();
-  const audience = env.ACCESS_AUD?.trim();
+  const audience = (env.ACCESS_AUD ?? '').split(',').map((tag) => tag.trim()).filter(Boolean);
   const token = request.headers.get(ACCESS_HEADER);
-  if (!team || !audience || !token) return null;
+  if (!team || audience.length === 0 || !token) return null;
 
   const issuer = `https://${team}`;
   let getKey = options.keys ?? keysByTeam.get(issuer);
@@ -94,7 +94,7 @@ async function verifiedClaims(request: Request, env: AccessEnv, options: Identif
     keysByTeam.set(issuer, getKey);
   }
   try {
-    const { payload } = await jwtVerify(token, getKey, { issuer, audience, algorithms: ['RS256'], currentDate: options.now });
+    const { payload } = await jwtVerify(token, getKey, { issuer, audience: audience.length === 1 ? audience[0] : audience, algorithms: ['RS256'], currentDate: options.now });
     return payload;
   } catch {
     return null;

@@ -52,9 +52,9 @@ export async function identify(request, env, options = {}) {
 /** The claims of a valid Access token, or null. Checks the signature, the team domain and the audience tag. */
 async function verifiedClaims(request, env, options) {
     const team = env.ACCESS_TEAM_DOMAIN?.trim();
-    const audience = env.ACCESS_AUD?.trim();
+    const audience = (env.ACCESS_AUD ?? '').split(',').map((tag) => tag.trim()).filter(Boolean);
     const token = request.headers.get(ACCESS_HEADER);
-    if (!team || !audience || !token)
+    if (!team || audience.length === 0 || !token)
         return null;
     const issuer = `https://${team}`;
     let getKey = options.keys ?? keysByTeam.get(issuer);
@@ -63,7 +63,7 @@ async function verifiedClaims(request, env, options) {
         keysByTeam.set(issuer, getKey);
     }
     try {
-        const { payload } = await jwtVerify(token, getKey, { issuer, audience, algorithms: ['RS256'], currentDate: options.now });
+        const { payload } = await jwtVerify(token, getKey, { issuer, audience: audience.length === 1 ? audience[0] : audience, algorithms: ['RS256'], currentDate: options.now });
         return payload;
     }
     catch {
