@@ -1,8 +1,9 @@
 import { cleanLine, cleanLines, lengthOf } from '../core/clean.js';
-import { accessEmail, emails } from './access.js';
+import { accessEmail, accessServiceToken, emails } from './access.js';
 export const MAX_NOTE_BODY_BYTES = 16 * 1024;
 export const MAX_NOTE_CHARACTERS = 5000;
 export const MAX_NOTES_PER_HOUR = 20;
+export const MAX_REF_LENGTH = 500;
 const HOUR_MS = 60 * 60 * 1000;
 /** True for `/feedback/api` and everything under it, and nothing else. */
 export const isFeedbackPath = (pathname) => pathname === '/feedback/api' || pathname.startsWith('/feedback/api/');
@@ -48,6 +49,8 @@ function readContext(raw) {
 export function createFeedback(options) {
     const { siteId, sink } = options;
     const senders = typeof options.senders === 'string' ? emails(options.senders) : options.senders.map((e) => e.trim().toLowerCase()).filter(Boolean);
+    const { senderStore } = options;
+    const routineIds = new Set((typeof options.routineClientIds === 'string' ? options.routineClientIds.split(',') : (options.routineClientIds ?? [])).map((id) => id.trim()).filter(Boolean));
     const limiter = options.limiter ?? memoryLimiter();
     const now = options.now ?? (() => new Date());
     async function readBody(request) {
@@ -106,7 +109,38 @@ export function createFeedback(options) {
         }
         if (!result.ok)
             return json(502, { error: 'not-delivered', message: result.message });
+        if (senderStore) {
+            // The note is already delivered: a store failure must not make the reviewer send it twice.
+            // Nothing is logged, because the error could carry the address.
+            try {
+                await senderStore.put({ ref: result.ref, email, site: siteId });
+            }
+            catch {
+                /* the routine will find no sender for this note */
+            }
+        }
         return json(200, { ok: true, ref: result.ref });
+    }
+    async function getSender(request, env) {
+        // Who first, as for a note. A browser identity has an email and is refused here whatever its role.
+        if (!senderStore || routineIds.size === 0)
+            return forbidden();
+        const client = await accessServiceToken(request, env, { keys: options.keys, now: options.now?.() });
+        if (!client || !routineIds.has(client))
+            return forbidden();
+        if (request.method !== 'GET')
+            return new Response(null, { status: 405, headers: { ...NO_STORE, allow: 'GET' } });
+        const ref = new URL(request.url).searchParams.get('ref') ?? '';
+        if (ref === '' || ref.length > MAX_REF_LENGTH)
+            return new Response(null, { status: 404, headers: NO_STORE });
+        let found;
+        try {
+            found = await senderStore.find(ref);
+        }
+        catch {
+            return json(500, { error: 'lookup-failed' });
+        }
+        return found ? json(200, { email: found.email }) : new Response(null, { status: 404, headers: NO_STORE });
     }
     return {
         async handle(request, env) {
@@ -115,6 +149,8 @@ export function createFeedback(options) {
                 return null;
             if (pathname === '/feedback/api/notes')
                 return postNote(request, env);
+            if (pathname === '/feedback/api/sender')
+                return getSender(request, env);
             return new Response(null, { status: 404, headers: NO_STORE });
         },
     };

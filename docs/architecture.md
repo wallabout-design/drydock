@@ -71,7 +71,7 @@ Entry points (`package.json` `exports`):
 | Entry point | What | Side |
 | --- | --- | --- |
 | `.` | `defineContent`, reading content, the change model, the in-memory store | build and server |
-| `./server` | `createEditor`, `createFeedback`, `identify`, `serveMedia`, `githubIssuesSink`; re-exports both stores until 1.0 | Worker |
+| `./server` | `createEditor`, `createFeedback`, `identify`, `serveMedia`, `githubIssuesSink`, `d1SenderStore`; re-exports both stores until 1.0 | Worker |
 | `./stores/git`, `./stores/d1` | One store each | Worker |
 | `./react`, `./astro`, `./astro/*.astro` | Rendering texts, lists and images | pages |
 | `./dock`, `./dock/react`, `./dock.css` | The launcher and panel, with `feedbackSection` and `editingSection` | public pages |
@@ -153,7 +153,26 @@ sequenceDiagram
 3. `createFeedback({ siteId, sink, senders })` answers only `POST /feedback/api/notes` (`src/server/feedback.ts`). It checks the Access token with `accessEmail`, and the email against `senders`. A refusal is an empty 403.
 4. It then checks `Origin`, JSON, 16 KB, 5,000 characters, and 20 notes an hour for each sender (`memoryLimiter`, in the Worker's memory unless the site passes its own).
 5. The subject is `[<siteId>] <path> #<code>`. `githubIssuesSink` (`src/feedback/sinks/github.ts`) uses it as the issue title, labels it `feedback`, and leaves the sender's address out of the body.
-6. Signed out, the note stays in the box and the mailto link carries a copy (`src/feedback/mailto.ts`).
+6. With a `senderStore`, a delivered note's `ref`, sender address, site and time are kept (`src/server/sender-store.ts`, `d1SenderStore` in `src/stores/d1/sender-store.ts`, table from `migrations/0002_feedback_senders.sql`). The address is kept for 90 days and is never put in an issue or a log. The feedback routine reads it with `GET /feedback/api/sender?ref=<ref>`, see "Flow b2".
+7. Signed out, the note stays in the box and the mailto link carries a copy (`src/feedback/mailto.ts`).
+
+## Flow b2: the routine looks up a sender
+
+The routine (a script, not a person) sends the Access service token's two headers, `CF-Access-Client-Id` and `CF-Access-Client-Secret`, on `GET /feedback/api/sender?ref=<issue URL>`. Access checks the secret and passes the request on with a signed `Cf-Access-Jwt-Assertion` whose claims carry `common_name` (the client id) and no `email`.
+
+1. `createFeedback({ senderStore, routineClientIds })` verifies that token as it does for editors (`accessServiceToken` in `src/server/access.ts`: signature, team domain, audience tag).
+2. A token with an `email` claim (a person's sign-in, an admin too) is refused. The client id must be in `routineClientIds`. Every refusal is an empty 403.
+3. A known, unexpired ref answers `{ "email": ... }`; anything else is an empty 404. The answer is `no-store`.
+4. The site's cron calls `d1SenderStore(db).purge()` to delete rows older than 90 days. `find` ignores them already.
+
+What an attacker could try, and why it fails:
+
+- *A signed-in reviewer or admin asks for an address*: the token has an `email` claim, so it is not a service token. 403.
+- *A forged or replayed token for another Access app*: the signature, issuer and audience tag are checked. 403.
+- *Another service token on the same Access app*: its client id is not in `routineClientIds`. 403.
+- *Guessing refs*: only the routine's token gets that far, and refs are issue URLs. A stolen routine secret is the exposure; rotate it in Access.
+- *SQL in the ref*: it is a bound parameter.
+- *The address in a log or an error*: the code never logs, and a store failure never reaches a response.
 
 ## Flow c: the dock shows "Edit this page"
 

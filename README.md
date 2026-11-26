@@ -44,6 +44,17 @@ Install both tools locally with `brew install gitleaks osv-scanner`. CI installs
 
 `d1Store(db, { content })` from `@wallabout-design/drydock/stores/d1` keeps content in a site's D1. Copy `node_modules/@wallabout-design/drydock/migrations/0001_content.sql` into the site's own migrations folder (with its next number) and apply it like any other; a new list or field needs no migration.
 
+## Keeping each note's sender (feedback routine)
+
+`githubIssuesSink` keeps the sender's address out of the issue. So the routine can email the sender a preview link, a site can keep it in its own D1:
+
+1. Copy `node_modules/@wallabout-design/drydock/migrations/0002_feedback_senders.sql` into the site's migrations folder (with its next number) and apply it.
+2. Pass `senderStore: d1SenderStore(env.DB)` (from `@wallabout-design/drydock/stores/d1`) and `routineClientIds: env.ROUTINE_CLIENT_IDS` (the routine's Access service-token client id, comma-separated) to `createFeedback`. The Access application must also cover `/feedback/api/sender`, with a Service Auth policy for the routine's token; the same `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are used.
+3. The routine calls `GET /feedback/api/sender?ref=<issue URL>` with the headers `CF-Access-Client-Id` and `CF-Access-Client-Secret`, and gets `{ "email": ... }` or 404. A browser session, an admin's too, gets an empty 403.
+4. A cron trigger calls `await d1SenderStore(env.DB).purge()` to delete rows older than 90 days (the lookup ignores them anyway).
+
+A site's own store passes `senderStoreContract` from `@wallabout-design/drydock/testing`. The design is in [`docs/architecture.md`](docs/architecture.md), "Flow b2".
+
 The git store loads the same way, from `@wallabout-design/drydock/stores/git`. Each store has its own entry point, so a D1 site's Worker doesn't bundle the GitHub client. `./server` still re-exports both until 1.0.
 
 ## Writing a store

@@ -1,8 +1,10 @@
 import type { JWTVerifyGetKey } from 'jose';
 import { type AccessEnv } from './access.js';
+import type { SenderStore } from './sender-store.js';
 export declare const MAX_NOTE_BODY_BYTES: number;
 export declare const MAX_NOTE_CHARACTERS = 5000;
 export declare const MAX_NOTES_PER_HOUR = 20;
+export declare const MAX_REF_LENGTH = 500;
 /** What the sink is told about the page. Every field is plain text and cut to a fixed length. */
 export interface NoteContext {
     url: string;
@@ -54,6 +56,10 @@ export interface FeedbackOptions {
     /** The site's own origin, when the Worker can't tell it from the request address. */
     origin?: string;
     limiter?: NoteLimiter;
+    /** Keeps each delivered note's sender, for the lookup below. Without one, nothing is kept and the lookup answers 404 to everyone. */
+    senderStore?: SenderStore;
+    /** The Access service tokens' client ids that may look a sender up (the routine's), as a list or separated by commas. With none, the lookup refuses everyone. */
+    routineClientIds?: readonly string[] | string;
     /** For tests: the keys an Access token is checked against, and the time it is checked at. */
     keys?: JWTVerifyGetKey;
     now?: () => Date;

@@ -1,4 +1,4 @@
-export { ACCESS_HEADER, can, identify, type AccessEnv, type Action, type Identity, type IdentifyOptions, type Role } from './access.js';
+export { ACCESS_HEADER, accessServiceToken, can, identify, type AccessEnv, type Action, type Identity, type IdentifyOptions, type Role } from './access.js';
 export { loadSnapshotFromD1, type LoadOptions, type ReadDb, type ReadStatement } from './read-d1.js';
 // Both stores are also exported from their own entry points (./stores/git, ./stores/d1),
 // so a site bundles only the one it uses. These re-exports stay until 1.0 so no site breaks.
@@ -25,6 +25,7 @@ export {
   isFeedbackPath,
   memoryLimiter,
   MAX_NOTE_BODY_BYTES,
+  MAX_REF_LENGTH,
   MAX_NOTE_CHARACTERS,
   MAX_NOTES_PER_HOUR,
   type Feedback,
@@ -36,4 +37,6 @@ export {
   type Sink,
   type SinkResult,
 } from './feedback.js';
+export type { SenderEntry, SenderStore } from './sender-store.js';
+export { d1SenderStore, SENDER_RETENTION_DAYS, type D1SenderOptions, type D1SenderStore } from '../stores/d1/index.js';
 export { githubIssuesSink, issueBody, explainFailure, type GitHubAuth, type GitHubIssuesOptions, type IssueNote, type IssueSinkResult } from '../feedback/sinks/github.js';

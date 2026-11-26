@@ -1,7 +1,7 @@
 import { exportJWK, generateKeyPair, SignJWT, type JWTVerifyGetKey } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createFeedback, ACCESS_HEADER, MAX_NOTE_CHARACTERS, MAX_NOTES_PER_HOUR, type AccessEnv } from '../src/server/index.js';
-import { fakeSink, sinkContract } from '../src/testing/index.js';
+import { fakeSenderStore, fakeSink, sinkContract } from '../src/testing/index.js';
 
 const TEAM = 'example-team.cloudflareaccess.com';
 const AUD = 'aud-tag-123';
@@ -170,4 +170,104 @@ describe('refusals', () => {
 
 describe('the fake sink', () => {
   sinkContract(() => fakeSink());
+});
+
+describe('the sender lookup for the feedback routine', () => {
+  const ROUTINE = 'routine-client-id.access';
+  const serviceToken = (claims: Record<string, unknown> = { common_name: ROUTINE }, over: { key?: CryptoKey; aud?: string } = {}) =>
+    new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256' })
+      .setIssuer(`https://${TEAM}`)
+      .setAudience(over.aud ?? AUD)
+      .setIssuedAt(at(-60))
+      .setExpirationTime(at(3600))
+      .sign(over.key ?? privateKey);
+  const lookup = (jwt: string | null, ref = 'fake-1', method = 'GET') =>
+    new Request(`${ORIGIN}/feedback/api/sender?ref=${encodeURIComponent(ref)}`, { method, headers: jwt ? { [ACCESS_HEADER]: jwt } : {} });
+
+  function withStore(over: { routineClientIds?: string | string[] | undefined; store?: ReturnType<typeof fakeSenderStore> | null } = {}) {
+    const sink = fakeSink();
+    const senderStore = over.store === null ? undefined : (over.store ?? fakeSenderStore());
+    const feedback = createFeedback({
+      siteId: 'rr',
+      sink,
+      senders: 'rev@example.com',
+      senderStore,
+      routineClientIds: 'routineClientIds' in over ? over.routineClientIds : ROUTINE,
+      keys,
+      now: () => NOW,
+    });
+    return { senderStore, run: (req: Request) => feedback.handle(req, env) };
+  }
+  const submit = async (run: (r: Request) => Promise<Response | null>) => (await run(await post({ note: 'Too small.', context })))?.status;
+
+  it('stores the sender when a note is delivered, and returns it to a listed service token', async () => {
+    const { senderStore, run } = withStore();
+    expect(await submit(run)).toBe(200);
+    expect(senderStore?.entries.get('fake-1')).toEqual({ email: 'rev@example.com', site: 'rr' });
+    const res = await run(lookup(await serviceToken()));
+    expect(res?.status).toBe(200);
+    expect(await res?.json()).toEqual({ email: 'rev@example.com' });
+    expect(res?.headers.get('cache-control')).toBe('no-store');
+  });
+  it('answers 404 for a ref it does not know, an empty ref, and a ref that is too long', async () => {
+    const { run } = withStore();
+    await submit(run);
+    expect((await run(lookup(await serviceToken(), 'other')))?.status).toBe(404);
+    expect((await run(lookup(await serviceToken(), '')))?.status).toBe(404);
+    expect((await run(lookup(await serviceToken(), 'x'.repeat(501))))?.status).toBe(404);
+  });
+  it('refuses a browser session, even an allowed sender with the routine id in an email-less look-alike', async () => {
+    const { run } = withStore();
+    await submit(run);
+    const res = await run(lookup(await token('rev@example.com')));
+    expect(res?.status).toBe(403);
+    expect(await res?.text()).toBe('');
+  });
+  it('refuses a token that has an email claim, even with a listed common_name', async () => {
+    const { run } = withStore();
+    await submit(run);
+    expect((await run(lookup(await serviceToken({ email: 'rev@example.com', common_name: ROUTINE }))))?.status).toBe(403);
+  });
+  it('refuses an unknown service token, no token, a token without common_name, and a forged or wrong-audience token', async () => {
+    const { run } = withStore();
+    await submit(run);
+    expect((await run(lookup(await serviceToken({ common_name: 'someone-else' }))))?.status).toBe(403);
+    expect((await run(lookup(null)))?.status).toBe(403);
+    expect((await run(lookup(await serviceToken({}))))?.status).toBe(403);
+    expect((await run(lookup(await serviceToken({ common_name: ROUTINE }, { key: (await generateKeyPair('RS256')).privateKey }))))?.status).toBe(403);
+    expect((await run(lookup(await serviceToken({ common_name: ROUTINE }, { aud: 'other-aud' }))))?.status).toBe(403);
+  });
+  it('refuses everyone when no client ids are configured, or no store is', async () => {
+    for (const over of [{ routineClientIds: undefined }, { routineClientIds: ' , ' }, { store: null }]) {
+      const { run } = withStore(over);
+      expect((await run(lookup(await serviceToken())))?.status).toBe(403);
+    }
+  });
+  it('refuses a write method, and a settings-less Worker', async () => {
+    const { run } = withStore();
+    expect((await run(lookup(await serviceToken(), 'fake-1', 'POST')))?.status).toBe(405);
+    const bare = createFeedback({ siteId: 'rr', sink: fakeSink(), senders: 'rev@example.com', senderStore: fakeSenderStore(), routineClientIds: ROUTINE, keys });
+    expect((await bare.handle(lookup(await serviceToken()), {}))?.status).toBe(403);
+  });
+  it('accepts several client ids, separated by commas or in a list', async () => {
+    for (const ids of ['a-id, routine-client-id.access', ['a-id', ROUTINE]]) {
+      const { run } = withStore({ routineClientIds: ids });
+      await submit(run);
+      expect((await run(lookup(await serviceToken())))?.status).toBe(200);
+    }
+  });
+  it('still answers a delivered note when the store fails, and keeps the address out of the response', async () => {
+    const failing = { put: async () => { throw new Error('boom rev@example.com'); }, find: async () => null };
+    const feedback = createFeedback({ siteId: 'rr', sink: fakeSink(), senders: 'rev@example.com', senderStore: failing, keys, now: () => NOW });
+    const res = await feedback.handle(await post({ note: 'a', context }), env);
+    expect(res?.status).toBe(200);
+    expect(await res?.text()).not.toContain('rev@example.com');
+  });
+  it('stores nothing when the sink fails', async () => {
+    const senderStore = fakeSenderStore();
+    const feedback = createFeedback({ siteId: 'rr', sink: fakeSink({ fail: 'no' }), senders: 'rev@example.com', senderStore, keys, now: () => NOW });
+    expect((await feedback.handle(await post({ note: 'a', context }), env))?.status).toBe(502);
+    expect(senderStore.entries.size).toBe(0);
+  });
 });

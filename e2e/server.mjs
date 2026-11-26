@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from 'jose';
 import { defineContent, fakeStore } from '../dist/index.js';
-import { ACCESS_HEADER, createEditor, createFeedback, d1Store, fakeRepo, gitStore, renderContentFiles, serveMedia } from '../dist/server/index.js';
+import { ACCESS_HEADER, createEditor, createFeedback, d1SenderStore, d1Store, fakeRepo, gitStore, renderContentFiles, serveMedia } from '../dist/server/index.js';
 import { fixtureD1 } from './d1-fixture.mjs';
 
 const port = Number(process.argv[2]);
@@ -95,8 +95,11 @@ const PAGE = `<!doctype html>
 const pair = await generateKeyPair('RS256');
 const jwk = { ...(await exportJWK(pair.publicKey)), alg: 'RS256', use: 'sig' };
 const keys = async () => importJWK(jwk, 'RS256');
-const token = (email) =>
-  new SignJWT({ email })
+const token = (email) => signed({ email });
+/** A service token's JWT: no email, the token's client id as common_name. */
+const serviceToken = (clientId) => signed({ common_name: clientId });
+const signed = (claims) =>
+  new SignJWT(claims)
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuer(`https://${TEAM}`)
     .setAudience(AUD)
@@ -180,6 +183,8 @@ function reset(photo = {}, initial = START(), keepBucket = false) {
   feedback = createFeedback({
     siteId: 'test',
     senders: ['ed@example.com'],
+    senderStore: d1SenderStore(fixtureD1()),
+    routineClientIds: ['routine-id.access'],
     keys,
     sink: {
       async send(note, sender) {
@@ -316,7 +321,10 @@ createServer(async (req, res) => {
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) if (typeof value === 'string') headers.set(name, value);
   const who = /(?:^|; )test-user=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
+  // A fake service token, as Access presents one: the client id named by the service-token cookie.
+  const service = /(?:^|; )service-token=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
   if (who) headers.set(ACCESS_HEADER, await token(decodeURIComponent(who)));
+  else if (service) headers.set(ACCESS_HEADER, await serviceToken(decodeURIComponent(service)));
   const init = { method: req.method, headers };
   if (req.method !== 'GET' && req.method !== 'HEAD') init.body = body;
   if (url.pathname.startsWith('/feedback/api/')) {

@@ -34,5 +34,12 @@ export declare function identify(request: Request, env: AccessEnv, options?: Ide
  * With a setting missing there is no valid token.
  */
 export declare function accessEmail(request: Request, env: AccessEnv, options?: IdentifyOptions): Promise<string | null>;
+/**
+ * The client id of the Access service token behind a valid Access token, or null. A service
+ * token's JWT has no `email` and carries `common_name`, the token's client id. A token with an
+ * `email` claim is a person's browser sign-in and is never a service token, whatever else it holds.
+ * Same checks as `accessEmail`; the caller decides which client ids may.
+ */
+export declare function accessServiceToken(request: Request, env: AccessEnv, options?: IdentifyOptions): Promise<string | null>;
 /** Whether this person may do this. An admin may do everything an editor may. */
 export declare function can(identity: Identity | null, action: Action): boolean;
